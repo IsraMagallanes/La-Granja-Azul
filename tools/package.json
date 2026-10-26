@@ -1,0 +1,16 @@
+{
+  "name": "granja-azul-tools",
+  "private": true,
+  "description": "Herramientas administrativas y pruebas de reglas de Firestore",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project la-granja-azul-app \"node --test rules.test.js\"",
+    "superadmin": "node create_superadmin.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "firebase": "^11.0.0"
+  }
+}

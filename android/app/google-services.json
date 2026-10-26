@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "56647616323",
+    "project_id": "la-granja-azul-app",
+    "storage_bucket": "la-granja-azul-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:56647616323:android:5dc6069edd9b44dde6d1f6",
+        "android_client_info": {
+          "package_name": "pe.rgkingenieros.granja_azul"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCUdcNbxTOdb4pmPfQUw5nqr6Dr_c_LN8o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
