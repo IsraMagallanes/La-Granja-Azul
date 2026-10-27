@@ -14,11 +14,11 @@ let env;
 
 before(async () => {
   env = await initializeTestEnvironment({
-    projectId: 'la-granja-azul-app',
+    projectId: 'demo-la-granja-azul',
     firestore: {
       rules: fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8180').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8180').split(':')[1]),
     },
   });
 });
@@ -32,14 +32,18 @@ beforeEach(async () => {
     const base = { email: 'x@granja.pe', nombre: 'X' };
     await setDoc(doc(db, 'usuarios/super'), { ...base, rol: 'superadmin', activo: true });
     await setDoc(doc(db, 'usuarios/admin'), { ...base, rol: 'admin', activo: true });
-    await setDoc(doc(db, 'usuarios/mesero'), { ...base, rol: 'mesero', activo: true });
+    for (const rol of ['mesero', 'cocina', 'cajero', 'almacen']) {
+      await setDoc(doc(db, `usuarios/${rol}`), { ...base, rol, activo: true });
+    }
     await setDoc(doc(db, 'usuarios/inactivo'), { ...base, rol: 'admin', activo: false });
-    await setDoc(doc(db, 'carta/plato1'), { nombre: 'Pollo' });
+    await setDoc(doc(db, 'categorias/aves'), { nombre: 'Aves', activo: true });
+    await setDoc(doc(db, 'carta/plato1'), dish);
   });
 });
 
 const as = (uid) => env.authenticatedContext(uid).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
+const dish = { nombre: 'Pollo', descripcion: 'A la brasa', categoriaId: 'aves', precio: 25.50, imagenUrl: 'https://example.com/pollo.jpg', disponible: true };
 
 test('anónimo no lee perfiles', () =>
   assertFails(getDoc(doc(anon(), 'usuarios/mesero'))));
@@ -84,12 +88,93 @@ test('la carta es de lectura pública', () =>
   assertSucceeds(getDoc(doc(anon(), 'carta/plato1'))));
 
 test('solo la administración edita la carta', async () => {
-  await assertFails(setDoc(doc(anon(), 'carta/plato2'), { nombre: 'a' }));
-  await assertFails(setDoc(doc(as('mesero'), 'carta/plato2'), { nombre: 'a' }));
-  await assertSucceeds(setDoc(doc(as('admin'), 'carta/plato2'), { nombre: 'a' }));
+  await assertFails(setDoc(doc(anon(), 'carta/plato2'), dish));
+  await assertFails(setDoc(doc(as('mesero'), 'carta/plato2'), dish));
+  await assertSucceeds(setDoc(doc(as('admin'), 'carta/plato2'), dish));
 });
 
 test('colecciones no declaradas están bloqueadas', async () => {
   await assertFails(getDoc(doc(as('super'), 'secretos/x')));
   await assertFails(setDoc(doc(as('super'), 'secretos/x'), { a: 1 }));
+});
+
+for (const uid of ['super', 'admin']) {
+  test(`${uid} crea y edita categorías y platos válidos`, async () => {
+    const db = as(uid);
+    await assertSucceeds(setDoc(doc(db, 'categorias/nueva'), { nombre: 'Nueva', activo: true }));
+    await assertSucceeds(updateDoc(doc(db, 'categorias/nueva'), { nombre: 'Renombrada' }));
+    await assertSucceeds(setDoc(doc(db, 'carta/nuevo'), { ...dish, categoriaId: 'nueva' }));
+    await assertSucceeds(updateDoc(doc(db, 'carta/nuevo'), { precio: 30, disponible: false }));
+    await assertFails(deleteDoc(doc(db, 'categorias/nueva')));
+    await assertFails(deleteDoc(doc(db, 'carta/nuevo')));
+  });
+}
+test('categorías públicas y escrituras restringidas incluso con datos válidos', async () => {
+  await assertSucceeds(getDocs(collection(anon(), 'categorias')));
+  for (const db of [anon(), as('mesero'), as('inactivo')]) {
+    await assertFails(setDoc(doc(db, 'categorias/x'), { nombre: 'X', activo: true }));
+    await assertFails(setDoc(doc(db, 'carta/x'), dish));
+    await assertFails(updateDoc(doc(db, 'categorias/aves'), { activo: false }));
+  }
+});
+test('valida campos y rechaza platos sin categoría existente', async () => {
+  const db = as('admin');
+  for (const patch of [{ precio: 0 }, { precio: -1 }, { precio: '25' }, { nombre: '' },
+    { nombre: '   ' }, { descripcion: '' }, { categoriaId: 'no-existe' },
+    { imagenUrl: 'data:image/png;base64,abcd' }, { imagenUrl: 'http://example.com/a.jpg' },
+    { disponible: 'si' }, { extra: true }]) {
+    await assertFails(setDoc(doc(db, 'carta/invalido'), { ...dish, ...patch }));
+  }
+  await assertFails(setDoc(doc(db, 'carta/incompleto'), { nombre: 'Pollo' }));
+  for (const data of [{ nombre: '', activo: true }, { nombre: '  ', activo: true },
+    { nombre: 'A', activo: 'si' }, { nombre: 'A', activo: true, extra: 1 }]) {
+    await assertFails(setDoc(doc(db, 'categorias/invalida'), data));
+  }
+});
+test('desactivar conserva referencias y permite reactivar sin huérfanos', async () => {
+  const db = as('admin');
+  await assertSucceeds(updateDoc(doc(db, 'categorias/aves'), { activo: false }));
+  await assertSucceeds(getDoc(doc(anon(), 'carta/plato1')));
+  await assertSucceeds(updateDoc(doc(db, 'carta/plato1'), { precio: 28 }));
+  await assertFails(deleteDoc(doc(db, 'categorias/aves')));
+  await assertSucceeds(updateDoc(doc(db, 'categorias/aves'), { activo: true }));
+});
+
+// Ambas pantallas usan listeners de colección completa, no lecturas de un solo documento.
+test('consultas de carta y categorías permitidas sin sesión y con cualquier rol', async () => {
+  for (const db of [anon(), ...['admin', 'super', 'mesero', 'cocina', 'cajero', 'almacen', 'inactivo'].map(as)]) {
+    await assertSucceeds(getDocs(collection(db, 'carta')));
+    await assertSucceeds(getDocs(collection(db, 'categorias')));
+  }
+});
+test('los roles operativos no pueden gestionar ninguna colección de la carta', async () => {
+  for (const uid of ['mesero', 'cocina', 'cajero', 'almacen', 'inactivo']) {
+    const db = as(uid);
+    await assertFails(setDoc(doc(db, 'carta/x'), dish));
+    await assertFails(updateDoc(doc(db, 'carta/plato1'), { disponible: false }));
+    await assertFails(setDoc(doc(db, 'categorias/x'), { nombre: 'X', activo: true }));
+    await assertFails(updateDoc(doc(db, 'categorias/aves'), { activo: false }));
+  }
+});
+test('regresión: reglas anteriores bloquean categorías incluso para un administrador activo', async () => {
+  const legacy = await initializeTestEnvironment({
+    projectId: 'demo-la-granja-azul-legacy',
+    firestore: {
+      rules: fs.readFileSync(path.join(__dirname, 'fixtures', 'firestore.pre_phase4.rules'), 'utf8'),
+      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8180').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8180').split(':')[1]),
+    },
+  });
+  try {
+    await legacy.withSecurityRulesDisabled(async ctx => {
+      await setDoc(doc(ctx.firestore(), 'usuarios/admin'), { rol: 'admin', activo: true });
+    });
+    for (const db of [legacy.unauthenticatedContext().firestore(), legacy.authenticatedContext('admin').firestore()]) {
+      await assertSucceeds(getDocs(collection(db, 'carta')));
+      await assertFails(getDocs(collection(db, 'categorias')));
+    }
+  } finally {
+    await legacy.clearFirestore();
+    await legacy.cleanup();
+  }
 });

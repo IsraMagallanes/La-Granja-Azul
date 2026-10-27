@@ -37,9 +37,41 @@ service cloud.firestore {
     }
 
     // Carta digital: lectura pública, edición solo administración.
+    function validText(value, maximum) {
+      return value is string && value.size() <= maximum
+        && value.matches('[\\s\\S]*[^\\s][\\s\\S]*');
+    }
+
+    match /categorias/{category} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasAll(['nombre', 'activo'])
+        && request.resource.data.keys().hasOnly(['nombre', 'activo'])
+        && validText(request.resource.data.nombre, 120)
+        && request.resource.data.activo is bool;
+      // Se conserva la relación de los platos, incluso al desactivar.
+      allow delete: if false;
+    }
+
     match /carta/{item} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasAll(['nombre', 'descripcion', 'categoriaId', 'precio', 'imagenUrl', 'disponible'])
+        && request.resource.data.keys().hasOnly(['nombre', 'descripcion', 'categoriaId', 'precio', 'imagenUrl', 'disponible'])
+        && validText(request.resource.data.nombre, 120)
+        && validText(request.resource.data.descripcion, 2000)
+        && request.resource.data.categoriaId is string
+        && request.resource.data.categoriaId.size() > 0
+        && request.resource.data.categoriaId.size() <= 1500
+        && exists(/databases/$(database)/documents/categorias/$(request.resource.data.categoriaId))
+        && request.resource.data.precio is number
+        && request.resource.data.precio > 0
+        && request.resource.data.precio <= 1000000
+        && request.resource.data.imagenUrl is string
+        && request.resource.data.imagenUrl.size() <= 2048
+        && request.resource.data.imagenUrl.matches('https://[^/\\s]+.*')
+        && request.resource.data.disponible is bool;
+      allow delete: if false;
     }
 
     match /{document=**} {

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Herramientas administrativas y pruebas de reglas de Firestore",
   "scripts": {
-    "test:rules": "firebase emulators:exec --only firestore --project la-granja-azul-app \"node --test rules.test.js\"",
+    "test:rules": "firebase emulators:exec --config ../firebase.test.json --only firestore --project demo-la-granja-azul \"node --test rules.test.js\"",
     "superadmin": "node create_superadmin.js"
   },
   "dependencies": {
