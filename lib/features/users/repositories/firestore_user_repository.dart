@@ -20,4 +20,10 @@ class FirestoreUserRepository implements UserRepository {
       return data == null ? null : AppUser.fromMap(doc.id, data);
     });
   }
+
+  @override
+  Future<void> markActivated(String uid) => _firestore
+      .collection(FirestorePaths.usuarios)
+      .doc(uid)
+      .update({'activadoEn': FieldValue.serverTimestamp()});
 }

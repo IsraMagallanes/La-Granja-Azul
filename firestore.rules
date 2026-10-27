@@ -1,9 +1,12 @@
 rules_version = '2';
 
 // Acceso mínimo necesario. Matriz alineada con PermissionService (Flutter).
-// Los documentos de `usuarios` solo se crean/modifican desde un entorno de
-// confianza (Admin SDK); ningún cliente puede escribirlos, de modo que nadie
-// puede crear un superadmin ni cambiar su propio rol desde la app.
+//
+// Estas reglas son la única barrera del lado servidor (el proyecto está en
+// plan Spark, sin Cloud Functions): validan jerarquía de roles, formatos,
+// unicidad, auditoría obligatoria y la asistencia con la hora del servidor
+// (`request.time`). Los primeros Superadmin se crean solo con el Admin SDK
+// (tools/create_superadmin.js); ningún cliente puede crear superadmins.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,12 +14,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function profilePath() {
-      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
+    function docPath(col, id) {
+      return /databases/$(database)/documents/$(col)/$(id);
     }
 
+    function profilePath() {
+      return docPath('usuarios', request.auth.uid);
+    }
+
+    // Acceso a datos: perfil activo Y correo verificado (token de Firebase Auth).
+    // Leer el propio perfil no lo exige, para poder mostrar «verifica tu correo».
     function hasActiveProfile() {
       return signedIn()
+        && request.auth.token.email_verified == true
         && exists(profilePath())
         && get(profilePath()).data.activo == true;
     }
@@ -29,11 +39,493 @@ service cloud.firestore {
       return roleIs(['admin', 'superadmin']);
     }
 
+    function isSuper() {
+      return roleIs(['superadmin']);
+    }
+
+    function operationalRoles() {
+      return ['mesero', 'cocina', 'cajero', 'almacen'];
+    }
+
+    // Roles que el actor puede asignar o administrar. Nadie crea superadmins.
+    function assignableRoles() {
+      return isSuper()
+        ? ['admin', 'mesero', 'cocina', 'cajero', 'almacen']
+        : operationalRoles();
+    }
+
+    // La acción administrativa debe acompañarse de su registro de auditoría
+    // (mismo lote), hecho por quien escribe y sobre el mismo objetivo.
+    function auditOk(auditId, target) {
+      let audit = getAfter(docPath('auditoria', auditId)).data;
+      return audit.actorUid == request.auth.uid && audit.objetivo == target;
+    }
+
+    function validDocument(type, number) {
+      return type == 'dni'
+        ? number.matches('^[0-9]{8}$')
+        : (type == 'ce' && number.matches('^[A-Z0-9]{9,12}$'));
+    }
+
+    function validName(value) {
+      return value is string && value.size() >= 2 && value.size() <= 60;
+    }
+
+    function validPhone(value) {
+      return value is string && value.matches('^9[0-9]{8}$');
+    }
+
+    function validDate(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    // ---------------------------------------------------------------- Personal
+
+    function validNewStaff(uid) {
+      let d = request.resource.data;
+      return isAdmin()
+        && d.keys().hasOnly([
+          'email', 'nombre', 'nombres', 'apellidos', 'tipoDocumento',
+          'numeroDocumento', 'celular', 'celularAlterno', 'rol', 'estado',
+          'activo', 'fechaIngreso', 'creadoEn', 'creadoPor', 'actualizadoEn',
+          'ultimaAuditoriaId'
+        ])
+        && d.keys().hasAll([
+          'email', 'nombre', 'nombres', 'apellidos', 'tipoDocumento',
+          'numeroDocumento', 'celular', 'rol', 'estado', 'activo',
+          'fechaIngreso', 'creadoEn', 'creadoPor', 'actualizadoEn',
+          'ultimaAuditoriaId'
+        ])
+        && d.rol in assignableRoles()
+        && d.estado == 'activo' && d.activo == true
+        && validName(d.nombres) && validName(d.apellidos)
+        && d.nombre == d.nombres + ' ' + d.apellidos
+        && validDocument(d.tipoDocumento, d.numeroDocumento)
+        && d.email is string && d.email == d.email.lower()
+        && d.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
+        && validPhone(d.celular)
+        && (!('celularAlterno' in d) || validPhone(d.celularAlterno))
+        && validDate(d.fechaIngreso)
+        && d.creadoPor == request.auth.uid
+        && d.creadoEn == request.time && d.actualizadoEn == request.time
+        // Unicidad por documento y correo, también frente a personal de baja.
+        && !exists(docPath('documentos', d.numeroDocumento))
+        && !exists(docPath('correos', d.email))
+        // Una cuenta de terminal no puede convertirse en personal.
+        && !exists(docPath('terminales', uid))
+        && getAfter(docPath('documentos', d.numeroDocumento)).data.uid == uid
+        && getAfter(docPath('correos', d.email)).data.uid == uid
+        && auditOk(d.ultimaAuditoriaId, uid);
+    }
+
+    function validStatusChange(uid) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let mov = getAfter(docPath('movimientosPersonal', after.ultimoMovimientoId)).data;
+      return after.diff(before).affectedKeys().hasOnly([
+          'estado', 'activo', 'bajaTipo', 'ultimoMovimientoId',
+          'actualizadoEn', 'ultimaAuditoriaId'
+        ])
+        && after.estado in ['activo', 'suspendido', 'baja']
+        && after.activo == (after.estado == 'activo')
+        && mov.uid == uid
+        && mov.estadoNuevo == after.estado
+        && mov.actorUid == request.auth.uid
+        && mov.creadoEn == request.time
+        && (after.estado == 'activo'
+            ? mov.tipo == 'reactivacion'
+            : (mov.tipo in ['despido', 'suspension', 'otro', 'renuncia']
+               && (after.estado == 'baja' || mov.tipo != 'renuncia')
+               && after.bajaTipo == mov.tipo));
+    }
+
+    function validStaffEdit(uid) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+      return changed.hasOnly([
+          'nombres', 'apellidos', 'nombre', 'celular', 'celularAlterno', 'rol',
+          'fechaIngreso', 'horarioId', 'puedeRegularizar', 'actualizadoEn',
+          'ultimaAuditoriaId'
+        ])
+        && validName(after.nombres) && validName(after.apellidos)
+        && after.nombre == after.nombres + ' ' + after.apellidos
+        && validPhone(after.celular)
+        && (!('celularAlterno' in after) || validPhone(after.celularAlterno))
+        && validDate(after.fechaIngreso)
+        && after.rol in assignableRoles()
+        // Solo el Superadmin autoriza a un Admin a regularizar marcaciones.
+        && (!('puedeRegularizar' in changed)
+            || (isSuper() && after.rol == 'admin' && after.puedeRegularizar is bool))
+        && (!('horarioId' in changed)
+            || !('horarioId' in after) || after.horarioId is string);
+    }
+
     match /usuarios/{uid} {
       // Cada usuario lee su propio perfil (incluso inactivo, para informarle).
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
-      allow create, update, delete: if false;
+      allow create: if validNewStaff(uid);
+      // Nadie se administra a sí mismo; el Admin solo toca roles operativos.
+      allow update: if isAdmin()
+        && uid != request.auth.uid
+        && resource.data.rol in assignableRoles()
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.ultimaAuditoriaId != resource.data.get('ultimaAuditoriaId', '')
+        && auditOk(request.resource.data.ultimaAuditoriaId, uid)
+        && (request.resource.data.estado != resource.data.get('estado', 'activo')
+            ? validStatusChange(uid)
+            : validStaffEdit(uid));
+      // Activación: el propio trabajador registra, una sola vez y con la hora
+      // del servidor, su primera entrada con el correo verificado. Nada más.
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.auth.token.email_verified == true
+        && resource.data.activo == true
+        && !('activadoEn' in resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activadoEn'])
+        && request.resource.data.activadoEn == request.time;
+      allow delete: if false;
+    }
+
+    // Índices de unicidad (documento y correo), conservados tras la baja.
+    match /documentos/{numero} {
+      allow get: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['uid', 'creadoEn'])
+        && request.resource.data.creadoEn == request.time
+        && getAfter(docPath('usuarios', request.resource.data.uid)).data.numeroDocumento == numero;
+      allow update, delete: if false;
+    }
+
+    match /correos/{correo} {
+      allow get: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['uid', 'creadoEn'])
+        && request.resource.data.creadoEn == request.time
+        && getAfter(docPath('usuarios', request.resource.data.uid)).data.email == correo;
+      allow update, delete: if false;
+    }
+
+    // Motivos de baja/suspensión/reactivación: confidenciales (solo Superadmin).
+    match /movimientosPersonal/{id} {
+      allow read: if isSuper();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(
+          ['uid', 'tipo', 'estadoNuevo', 'motivo', 'actorUid', 'creadoEn'])
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.creadoEn == request.time
+        && request.resource.data.motivo is string
+        && request.resource.data.motivo.size() >= 10
+        && request.resource.data.motivo.size() <= 1000
+        && getAfter(docPath('usuarios', request.resource.data.uid)).data.ultimoMovimientoId == id;
+      allow update, delete: if false;
+    }
+
+    // Restricciones de recontratación: solo el Superadmin las establece o
+    // levanta. Los admins ven únicamente el estado (aviso informativo).
+    match /restricciones/{documento} {
+      allow read: if isAdmin();
+      allow create, update: if isSuper()
+        && request.resource.data.keys().hasOnly(
+          ['estado', 'establecidaPor', 'actualizadoEn', 'revisarEn', 'ultimaAuditoriaId'])
+        && request.resource.data.estado in ['activa', 'levantada']
+        && request.resource.data.establecidaPor == request.auth.uid
+        && request.resource.data.actualizadoEn == request.time
+        && (documento.matches('^[0-9]{8}$') || documento.matches('^[A-Z0-9]{9,12}$'))
+        && validDate(request.resource.data.get('revisarEn', '0000-00-00'))
+        && auditOk(request.resource.data.ultimaAuditoriaId, documento);
+      allow delete: if false;
+
+      match /privado/{detalle} {
+        allow read: if isSuper();
+        allow create, update: if isSuper()
+          && detalle == 'detalle'
+          && request.resource.data.keys().hasOnly(['justificacion', 'actorUid', 'actualizadoEn'])
+          && request.resource.data.justificacion is string
+          && request.resource.data.justificacion.size() >= 10
+          && request.resource.data.justificacion.size() <= 1000
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actualizadoEn == request.time;
+        allow delete: if false;
+      }
+    }
+
+    // Auditoría append-only; la lee solo el Superadmin.
+    match /auditoria/{id} {
+      allow read: if isSuper();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(
+          ['accion', 'actorUid', 'actorNombre', 'objetivo', 'campos', 'creadoEn'])
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.creadoEn == request.time;
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------- Asistencia
+    //
+    // Flujo QR: el trabajador crea un token efímero (45 s, un solo uso, sin
+    // datos personales en el QR). Solo una terminal autorizada puede
+    // consumirlo, y lo hace en un lote atómico: token usado + registro de
+    // asistencia + estado, todos con `request.time` (hora del servidor).
+
+    // Una terminal es una cuenta de dispositivo autorizada que NO es personal:
+    // una cuenta con perfil en `usuarios` jamás cuenta como terminal, aunque
+    // alguien le cree un documento en `terminales`.
+    function isTerminal() {
+      return signedIn()
+        && exists(docPath('terminales', request.auth.uid))
+        && get(docPath('terminales', request.auth.uid)).data.activo == true
+        && !exists(docPath('usuarios', request.auth.uid));
+    }
+
+    function canRegularize() {
+      return isSuper()
+        || (roleIs(['admin'])
+            && get(profilePath()).data.get('puedeRegularizar', false) == true);
+    }
+
+    function validTime(value) {
+      return value is string && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    match /horarios/{id} {
+      allow read: if hasActiveProfile();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(
+          ['nombre', 'horaInicio', 'horaFin', 'toleranciaMin', 'dias', 'activo',
+           'actualizadoEn', 'ultimaAuditoriaId'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() >= 2
+        && request.resource.data.nombre.size() <= 40
+        && validTime(request.resource.data.horaInicio)
+        && validTime(request.resource.data.horaFin)
+        && request.resource.data.horaInicio != request.resource.data.horaFin
+        && request.resource.data.toleranciaMin is int
+        && request.resource.data.toleranciaMin >= 0
+        && request.resource.data.toleranciaMin <= 120
+        && request.resource.data.dias is list
+        && request.resource.data.dias.size() >= 1
+        && request.resource.data.dias.size() <= 7
+        && request.resource.data.activo is bool
+        && request.resource.data.actualizadoEn == request.time
+        && auditOk(request.resource.data.ultimaAuditoriaId, id);
+      allow delete: if false;
+    }
+
+    // Terminales del restaurante: las autoriza y revoca solo el Superadmin.
+    match /terminales/{terminalUid} {
+      allow get: if signedIn() && (request.auth.uid == terminalUid || isSuper());
+      allow list: if isSuper();
+      allow create, update: if isSuper()
+        && request.resource.data.keys().hasOnly(
+          ['nombre', 'activo', 'autorizadoPor', 'actualizadoEn', 'ultimaAuditoriaId'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() >= 2
+        && request.resource.data.nombre.size() <= 40
+        && request.resource.data.activo is bool
+        && request.resource.data.autorizadoPor == request.auth.uid
+        && request.resource.data.actualizadoEn == request.time
+        && !exists(docPath('usuarios', terminalUid))
+        && auditOk(request.resource.data.ultimaAuditoriaId, terminalUid);
+      allow delete: if false;
+    }
+
+    // Enlace terminal ↔ dispositivo físico. La tablet genera un secreto local
+    // y lo registra UNA vez (solo creación). Nadie puede leerlo desde un
+    // cliente, así que unas credenciales copiadas a otro equipo no pueden
+    // reproducir la prueba. El Superadmin puede restablecerlo (borrarlo).
+    match /terminalClaves/{terminalUid} {
+      allow read: if false;
+      allow create: if isTerminal()
+        && request.auth.uid == terminalUid
+        && request.resource.data.keys().hasOnly(['clave', 'creadoEn'])
+        && request.resource.data.clave is string
+        && request.resource.data.clave.size() >= 32
+        && request.resource.data.clave.size() <= 128
+        && request.resource.data.creadoEn == request.time;
+      allow update: if false;
+      allow delete: if isSuper();
+    }
+
+    // Prueba de posesión del secreto: cada lote de marcación la incluye con la
+    // hora del servidor. Escritura-solo; el valor debe coincidir con el
+    // registrado en `terminalClaves`.
+    match /terminalPruebas/{terminalUid} {
+      allow read: if false;
+      allow create, update: if isTerminal()
+        && request.auth.uid == terminalUid
+        && request.resource.data.keys().hasOnly(['clave', 'actualizadoEn'])
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.clave == get(docPath('terminalClaves', terminalUid)).data.clave;
+      allow delete: if false;
+    }
+
+    match /qrTokens/{tokenId} {
+      allow get: if signedIn() && (isTerminal() || resource.data.uid == request.auth.uid);
+      allow list: if false;
+
+      // El trabajador activo genera su propio token. Generar el QR NO registra
+      // asistencia.
+      allow create: if hasActiveProfile()
+        && request.resource.data.keys().hasOnly(
+          ['uid', 'tipo', 'nombreMostrar', 'creadoEn', 'usadoEn', 'terminalId'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.tipo in ['entrada', 'salida']
+        && request.resource.data.nombreMostrar == get(profilePath()).data.get('nombres', '')
+        && request.resource.data.creadoEn == request.time
+        && request.resource.data.usadoEn == null
+        && request.resource.data.terminalId == null
+        && tokenId.matches('^[0-9a-f]{32}$');
+
+      // Solo una terminal autorizada lo consume, una vez y dentro de los 45 s, en
+      // el mismo lote que el registro de asistencia.
+      allow update: if isTerminal()
+        && resource.data.usadoEn == null
+        && resource.data.creadoEn + duration.value(45, 's') > request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usadoEn', 'terminalId'])
+        && request.resource.data.usadoEn == request.time
+        && request.resource.data.terminalId == request.auth.uid
+        && get(docPath('usuarios', resource.data.uid)).data.activo == true
+        && getAfter(docPath('terminalPruebas', request.auth.uid)).data.actualizadoEn == request.time
+        && getAfter(docPath('estadoAsistencia', resource.data.uid)).data.actualizadoEn == request.time;
+      allow delete: if false;
+    }
+
+    match /estadoAsistencia/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin() || isTerminal());
+      allow list: if isAdmin();
+
+      // Terminal: abre o cierra la jornada junto con su registro.
+      allow create, update: if isTerminal()
+        && request.resource.data.keys().hasOnly(['abierta', 'asistenciaId', 'actualizadoEn'])
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.abierta is bool
+        && (request.resource.data.abierta
+            ? (getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.entrada == request.time
+               && getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.uid == uid
+               && getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.get('salida', null) == null)
+            : (getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.salida == request.time
+               && getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.uid == uid));
+
+      // Regularización supervisada: coherente con el registro modificado.
+      allow create, update: if canRegularize()
+        && request.resource.data.keys().hasOnly(
+          ['abierta', 'asistenciaId', 'actualizadoEn', 'regularizadoPor'])
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.regularizadoPor == request.auth.uid
+        && request.resource.data.abierta is bool
+        && getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.uid == uid
+        && getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.regularizada == true
+        && request.resource.data.abierta
+           == (getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.get('salida', null) == null);
+      allow delete: if false;
+    }
+
+    match /asistencias/{id} {
+      allow get: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow list: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+
+      // Entrada por QR (terminal): la jornada anterior debe estar cerrada.
+      allow create: if isTerminal()
+        && request.resource.data.keys().hasOnly(
+          ['uid', 'entrada', 'salida', 'origen', 'terminalId', 'tokenId', 'regularizada'])
+        && request.resource.data.origen == 'qr'
+        && request.resource.data.regularizada == false
+        && request.resource.data.entrada == request.time
+        && request.resource.data.salida == null
+        && request.resource.data.terminalId == request.auth.uid
+        && get(docPath('qrTokens', request.resource.data.tokenId)).data.usadoEn == null
+        && get(docPath('qrTokens', request.resource.data.tokenId)).data.uid == request.resource.data.uid
+        && get(docPath('qrTokens', request.resource.data.tokenId)).data.tipo == 'entrada'
+        && getAfter(docPath('qrTokens', request.resource.data.tokenId)).data.usadoEn == request.time
+        && get(docPath('usuarios', request.resource.data.uid)).data.activo == true
+        && (!exists(docPath('estadoAsistencia', request.resource.data.uid))
+            || get(docPath('estadoAsistencia', request.resource.data.uid)).data.abierta == false)
+        && getAfter(docPath('estadoAsistencia', request.resource.data.uid)).data.abierta == true
+        && getAfter(docPath('estadoAsistencia', request.resource.data.uid)).data.asistenciaId == id;
+
+      // Salida por QR (terminal): exige entrada abierta de ese mismo registro.
+      allow update: if isTerminal()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['salida', 'salidaTokenId'])
+        && resource.data.get('salida', null) == null
+        && request.resource.data.salida == request.time
+        && get(docPath('qrTokens', request.resource.data.salidaTokenId)).data.usadoEn == null
+        && get(docPath('qrTokens', request.resource.data.salidaTokenId)).data.uid == resource.data.uid
+        && get(docPath('qrTokens', request.resource.data.salidaTokenId)).data.tipo == 'salida'
+        && getAfter(docPath('qrTokens', request.resource.data.salidaTokenId)).data.usadoEn == request.time
+        && get(docPath('estadoAsistencia', resource.data.uid)).data.abierta == true
+        && get(docPath('estadoAsistencia', resource.data.uid)).data.asistenciaId == id
+        && getAfter(docPath('estadoAsistencia', resource.data.uid)).data.abierta == false;
+
+      // Regularización o marcación supervisada: motivo obligatorio y auditoría.
+      allow create: if canRegularize()
+        && request.resource.data.keys().hasOnly(
+          ['uid', 'entrada', 'salida', 'origen', 'regularizada', 'motivo',
+           'regularizadoPor', 'regularizadoEn', 'ultimaAuditoriaId'])
+        && request.resource.data.uid != request.auth.uid
+        && get(docPath('usuarios', request.resource.data.uid)).data.rol in assignableRoles()
+        && request.resource.data.origen in ['regularizada', 'supervisada']
+        && request.resource.data.regularizada == true
+        && request.resource.data.entrada is timestamp
+        && request.resource.data.entrada <= request.time
+        && (request.resource.data.get('salida', null) == null
+            || (request.resource.data.salida is timestamp
+                && request.resource.data.salida > request.resource.data.entrada
+                && request.resource.data.salida <= request.time))
+        && request.resource.data.motivo is string
+        && request.resource.data.motivo.size() >= 10
+        && request.resource.data.motivo.size() <= 500
+        && request.resource.data.regularizadoPor == request.auth.uid
+        && request.resource.data.regularizadoEn == request.time
+        && auditOk(request.resource.data.ultimaAuditoriaId, request.resource.data.uid)
+        && (request.resource.data.get('salida', null) != null
+            || !exists(docPath('estadoAsistencia', request.resource.data.uid))
+            || get(docPath('estadoAsistencia', request.resource.data.uid)).data.abierta == false);
+
+      allow update: if canRegularize()
+        && resource.data.uid != request.auth.uid
+        && get(docPath('usuarios', resource.data.uid)).data.rol in assignableRoles()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['entrada', 'salida', 'regularizada', 'motivo', 'regularizadoPor',
+           'regularizadoEn', 'ultimaAuditoriaId'])
+        && request.resource.data.regularizada == true
+        && request.resource.data.entrada <= request.time
+        && (request.resource.data.get('salida', null) == null
+            || (request.resource.data.salida > request.resource.data.entrada
+                && request.resource.data.salida <= request.time))
+        && request.resource.data.motivo is string
+        && request.resource.data.motivo.size() >= 10
+        && request.resource.data.motivo.size() <= 500
+        && request.resource.data.regularizadoPor == request.auth.uid
+        && request.resource.data.regularizadoEn == request.time
+        && auditOk(request.resource.data.ultimaAuditoriaId, resource.data.uid);
+      allow delete: if false;
+    }
+
+    // Solicitudes de corrección: las crea el trabajador; las resuelve quien
+    // puede regularizar.
+    match /correcciones/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if hasActiveProfile()
+        && request.resource.data.keys().hasOnly(['uid', 'fecha', 'tipo', 'motivo', 'estado', 'creadoEn'])
+        && request.resource.data.uid == request.auth.uid
+        && validDate(request.resource.data.fecha)
+        && request.resource.data.tipo in ['entrada', 'salida', 'ambas']
+        && request.resource.data.motivo is string
+        && request.resource.data.motivo.size() >= 10
+        && request.resource.data.motivo.size() <= 500
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.creadoEn == request.time;
+      allow update: if canRegularize()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['estado', 'respuesta', 'resueltoPor', 'resueltoEn', 'ultimaAuditoriaId'])
+        && resource.data.estado == 'pendiente'
+        && request.resource.data.estado in ['aprobada', 'rechazada']
+        && request.resource.data.resueltoPor == request.auth.uid
+        && request.resource.data.resueltoEn == request.time
+        && auditOk(request.resource.data.ultimaAuditoriaId, resource.data.uid);
+      allow delete: if false;
     }
 
     // Carta digital: lectura pública, edición solo administración.

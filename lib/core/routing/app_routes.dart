@@ -12,6 +12,7 @@ enum AppRoute {
   login('/login'),
   forgotPassword('/recuperar'),
   accessDenied('/acceso-denegado'),
+  verifyEmail('/verificar-correo'),
 
   // Personal (requieren sesión y permiso).
   dashboard('/app/dashboard', 'Dashboard', Icons.dashboard, Permission.viewDashboard),
@@ -24,7 +25,15 @@ enum AppRoute {
   tables('/app/mesas', 'Mesas', Icons.table_restaurant, Permission.viewTables),
   menuAdmin('/app/carta', 'Carta', Icons.menu_book, Permission.manageMenu),
   orders('/app/pedidos', 'Pedidos', Icons.receipt_long, Permission.viewOrders),
-  reports('/app/reportes', 'Reportes', Icons.bar_chart, Permission.viewReports);
+  reports('/app/reportes', 'Reportes', Icons.bar_chart, Permission.viewReports),
+  attendanceAdmin('/app/asistencia', 'Asistencia', Icons.fact_check, Permission.manageAttendance),
+  myAttendance('/app/mi-asistencia', 'Mi asistencia', Icons.qr_code_2, Permission.ownAttendance),
+  terminals('/app/terminales', 'Terminales', Icons.tablet_android, Permission.manageTerminals),
+  restrictions('/app/restricciones', 'Restricciones', Icons.block, Permission.manageRestrictions),
+  audit('/app/auditoria', 'Auditoría', Icons.history, Permission.viewAudit),
+
+  // Terminal de asistencia del restaurante (cuenta de dispositivo, no personal).
+  attendanceTerminal('/asistencia/terminal');
 
   const AppRoute(this.path, [this.label, this.icon, this.permission]);
 

@@ -46,8 +46,9 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'Si el correo está registrado, recibirás un enlace para '
-                    'restablecer tu contraseña.',
+                    'Firebase aceptó la solicitud. Si el correo está registrado, '
+                    'recibirás el enlace para definir tu contraseña en unos '
+                    'minutos (revisa también spam).',
                   ),
                   const SizedBox(height: 16),
                   FilledButton(

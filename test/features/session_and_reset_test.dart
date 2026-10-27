@@ -51,7 +51,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(auth.resets, ['u1@granja.pe']);
-    expect(find.textContaining('recibirás un enlace'), findsOneWidget);
+    expect(find.textContaining('Firebase aceptó la solicitud'), findsOneWidget);
   });
 
   testWidgets('recuperación valida el correo', (tester) async {

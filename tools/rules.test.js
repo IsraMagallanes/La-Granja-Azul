@@ -38,7 +38,7 @@ beforeEach(async () => {
   });
 });
 
-const as = (uid) => env.authenticatedContext(uid).firestore();
+const as = (uid) => env.authenticatedContext(uid, { email_verified: true }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
 
 test('anónimo no lee perfiles', () =>

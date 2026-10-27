@@ -29,6 +29,11 @@ class AuthRedirect {
               .path,
       AccessDenied() =>
         route == AppRoute.accessDenied ? null : AppRoute.accessDenied.path,
+      EmailUnverified() =>
+        route == AppRoute.verifyEmail ? null : AppRoute.verifyEmail.path,
+      TerminalAuthenticated() => route == AppRoute.attendanceTerminal
+          ? null
+          : AppRoute.attendanceTerminal.path,
       Authenticated(:final user) => _forUser(route, user.role),
     };
   }

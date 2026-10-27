@@ -14,6 +14,8 @@ class PermissionService {
     Permission.viewOrders,
     Permission.manageInventory,
     Permission.viewReports,
+    Permission.manageAttendance,
+    Permission.ownAttendance,
   };
 
   static final Map<UserRole, Set<Permission>> _matrix = {
@@ -21,16 +23,31 @@ class PermissionService {
       ..._adminPermissions,
       Permission.manageAdmins,
       Permission.manageRoles,
+      Permission.manageTerminals,
+      Permission.manageRestrictions,
+      Permission.viewAudit,
     },
     UserRole.admin: _adminPermissions,
-    UserRole.mesero: {Permission.viewTables, Permission.takeOrders},
-    UserRole.cocina: {Permission.useKitchen, Permission.viewOrders},
+    UserRole.mesero: {
+      Permission.viewTables,
+      Permission.takeOrders,
+      Permission.ownAttendance,
+    },
+    UserRole.cocina: {
+      Permission.useKitchen,
+      Permission.viewOrders,
+      Permission.ownAttendance,
+    },
     UserRole.cajero: {
       Permission.useCashier,
       Permission.viewOrders,
       Permission.viewTables,
+      Permission.ownAttendance,
     },
-    UserRole.almacen: {Permission.manageInventory},
+    UserRole.almacen: {
+      Permission.manageInventory,
+      Permission.ownAttendance,
+    },
   };
 
   Set<Permission> permissionsOf(UserRole role) => _matrix[role]!;

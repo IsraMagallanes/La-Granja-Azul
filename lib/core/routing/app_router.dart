@@ -3,10 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/screens/dashboard_screen.dart';
+import '../../features/attendance/screens/attendance_admin_screen.dart';
+import '../../features/attendance/screens/my_attendance_screen.dart';
+import '../../features/attendance/screens/terminal_screen.dart';
+import '../../features/attendance/screens/terminals_screen.dart';
+import '../../features/audit/screens/audit_screen.dart';
 import '../../features/auth/controllers/auth_providers.dart';
 import '../../features/auth/screens/access_denied_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/verify_email_screen.dart';
 import '../../features/cashier/screens/cashier_screen.dart';
 import '../../features/inventory/screens/inventory_screen.dart';
 import '../../features/kitchen/screens/kitchen_screen.dart';
@@ -16,6 +22,7 @@ import '../../features/orders/screens/orders_screen.dart';
 import '../../features/reports/screens/reports_screen.dart';
 import '../../features/roles/controllers/role_providers.dart';
 import '../../features/roles/screens/roles_screen.dart';
+import '../../features/staff/screens/restrictions_screen.dart';
 import '../../features/tables/screens/tables_screen.dart';
 import '../../features/users/screens/users_screen.dart';
 import '../../features/waiters/screens/waiter_screen.dart';
@@ -36,6 +43,11 @@ const _staffScreens = <AppRoute, Widget>{
   AppRoute.menuAdmin: MenuAdminScreen(),
   AppRoute.orders: OrdersScreen(),
   AppRoute.reports: ReportsScreen(),
+  AppRoute.attendanceAdmin: AttendanceAdminScreen(),
+  AppRoute.myAttendance: MyAttendanceScreen(),
+  AppRoute.terminals: TerminalsScreen(),
+  AppRoute.restrictions: RestrictionsScreen(),
+  AppRoute.audit: AuditScreen(),
 };
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -67,6 +79,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.forgotPassword.path,
         builder: (_, _) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: AppRoute.attendanceTerminal.path,
+        builder: (_, _) => const TerminalScreen(),
+      ),
+      GoRoute(
+        path: AppRoute.verifyEmail.path,
+        builder: (_, _) => const VerifyEmailScreen(),
       ),
       GoRoute(
         path: AppRoute.accessDenied.path,

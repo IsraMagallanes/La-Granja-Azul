@@ -11,4 +11,9 @@ enum Permission {
   useCashier,
   manageInventory,
   viewReports,
+  manageAttendance,
+  ownAttendance,
+  manageTerminals,
+  manageRestrictions,
+  viewAudit,
 }
