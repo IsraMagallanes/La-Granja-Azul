@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'features/tables/controllers/table_providers.dart';
+import 'features/tables/repositories/firestore_table_repository.dart';
+import 'features/orders/controllers/order_providers.dart';
+import 'features/orders/repositories/firestore_order_repository.dart';
 
 import 'features/attendance/controllers/attendance_providers.dart';
 import 'features/attendance/controllers/terminal_providers.dart';
@@ -32,6 +36,12 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
+        tableRepositoryProvider.overrideWithValue(
+          FirestoreTableRepository(firestore),
+        ),
+        orderRepositoryProvider.overrideWithValue(
+          FirestoreOrderRepository(firestore),
+        ),
         menuRepositoryProvider.overrideWithValue(
           FirestoreMenuRepository(FirebaseFirestore.instance),
         ),

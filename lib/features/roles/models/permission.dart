@@ -5,6 +5,7 @@ enum Permission {
   manageRoles,
   manageMenu,
   viewTables,
+  manageTables,
   takeOrders,
   viewOrders,
   useKitchen,

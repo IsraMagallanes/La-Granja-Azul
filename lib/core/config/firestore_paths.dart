@@ -1,5 +1,7 @@
 /// Nombres de colecciones de Firestore.
 abstract final class FirestorePaths {
+  static const mesas = 'mesas';
+  static const pedidos = 'pedidos';
   static const usuarios = 'usuarios';
   static const carta = 'carta';
 
@@ -21,5 +23,4 @@ abstract final class FirestorePaths {
   static const asistencias = 'asistencias';
   static const estadoAsistencia = 'estadoAsistencia';
   static const correcciones = 'correcciones';
-
 }

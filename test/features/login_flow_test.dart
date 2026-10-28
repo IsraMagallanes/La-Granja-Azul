@@ -7,6 +7,10 @@ import 'package:granja_azul/features/roles/models/user_role.dart';
 import 'package:granja_azul/features/users/controllers/user_providers.dart';
 
 import '../support/fakes.dart';
+import '../support/order_fakes.dart';
+
+import 'package:granja_azul/features/tables/controllers/table_providers.dart';
+import 'package:granja_azul/features/orders/controllers/order_providers.dart';
 
 Future<void> pumpApp(
   WidgetTester tester, {
@@ -23,6 +27,8 @@ Future<void> pumpApp(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        tableRepositoryProvider.overrideWithValue(FakeTableRepository()),
+        orderRepositoryProvider.overrideWithValue(FakeOrderRepository()),
         authRepositoryProvider.overrideWithValue(auth),
         userRepositoryProvider.overrideWithValue(users),
       ],
@@ -67,10 +73,7 @@ void main() {
   testWidgets('mesero aterriza en su módulo', (tester) async {
     await pumpApp(tester, role: UserRole.mesero);
     await login(tester, 'u1@granja.pe', 'secreta1');
-    expect(
-      find.text('Toma de pedidos por mesa (próximamente).'),
-      findsOneWidget,
-    );
+    expect(find.text('Mis pedidos'), findsOneWidget);
   });
 
   testWidgets('usuario inactivo recibe acceso denegado', (tester) async {

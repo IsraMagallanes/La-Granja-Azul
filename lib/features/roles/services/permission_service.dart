@@ -10,6 +10,8 @@ class PermissionService {
     Permission.viewDashboard,
     Permission.manageStaff,
     Permission.manageMenu,
+    Permission.manageTables,
+    Permission.takeOrders,
     Permission.viewTables,
     Permission.viewOrders,
     Permission.manageInventory,
@@ -31,6 +33,7 @@ class PermissionService {
     UserRole.mesero: {
       Permission.viewTables,
       Permission.takeOrders,
+      Permission.viewOrders,
       Permission.ownAttendance,
     },
     UserRole.cocina: {

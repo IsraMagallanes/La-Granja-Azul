@@ -566,6 +566,123 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------------------------------------------------------------- Fase 5
+    function canTakeOrders() { return roleIs(['admin', 'superadmin', 'mesero']); }
+    function canReadOrder(d) {
+      return roleIs(['admin', 'superadmin', 'cocina', 'cajero'])
+        || (roleIs(['mesero']) && d.meseroId == request.auth.uid);
+    }
+    function canEditOrder(d) {
+      return canTakeOrders() && d.estado == 'abierto'
+        && (isAdmin() || d.meseroId == request.auth.uid);
+    }
+    function validTable(id, d) {
+      return d.keys().hasOnly(['numero', 'capacidad', 'activo', 'pedidoActivo'])
+        && d.numero == id && id.matches('^[1-9][0-9]{0,3}$')
+        && d.capacidad is int && d.capacidad >= 1 && d.capacidad <= 50
+        && d.activo is bool
+        && (d.pedidoActivo == null || d.pedidoActivo is string);
+    }
+    function validTableLock(id) {
+      let before = resource.data.pedidoActivo;
+      let after = request.resource.data.pedidoActivo;
+      return canTakeOrders() && resource.data.activo == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pedidoActivo'])
+        && (before == null && after is string
+          ? (!exists(docPath('pedidos', after))
+            && getAfter(docPath('pedidos', after)).data.mesaId == id
+            && getAfter(docPath('pedidos', after)).data.meseroId == request.auth.uid
+            && getAfter(docPath('pedidos', after)).data.estado == 'abierto')
+          : (before is string && after == null
+            && canEditOrder(get(docPath('pedidos', before)).data)
+            && getAfter(docPath('pedidos', before)).data.estado == 'cancelado'));
+    }
+    match /mesas/{table} {
+      allow read: if roleIs(['admin', 'superadmin', 'mesero', 'cajero']);
+      allow create: if isAdmin() && validTable(table, request.resource.data)
+        && request.resource.data.pedidoActivo == null;
+      allow update: if validTable(table, request.resource.data)
+        && ((isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['capacidad', 'activo'])
+          && (request.resource.data.activo || resource.data.pedidoActivo == null))
+          || validTableLock(table));
+      allow delete: if false;
+    }
+    function validOrderShape(d) {
+      return d.keys().hasOnly(['mesaId', 'meseroId', 'meseroNombre', 'estado', 'creadoEn', 'actualizadoEn',
+          'revision', 'cantidadDetalles', 'detalleModificado'])
+        && d.mesaId is string && d.meseroId is string
+        && d.meseroNombre is string && d.meseroNombre.size() <= 200
+        && d.estado in ['abierto', 'registrado', 'cancelado']
+        && d.revision is int && d.revision >= 0
+        && d.cantidadDetalles is int && d.cantidadDetalles >= 0 && d.cantidadDetalles <= 50
+        && d.detalleModificado is string && d.creadoEn is timestamp
+        && d.actualizadoEn == request.time;
+    }
+    function orderLock(id, d) {
+      let table = getAfter(docPath('mesas', d.mesaId)).data;
+      return table.activo == true
+        && (d.estado == 'cancelado' ? table.pedidoActivo == null : table.pedidoActivo == id);
+    }
+    function validDetailCount(id, before, after) {
+      let detail = /databases/$(database)/documents/pedidos/$(id)/detalles/$(after.detalleModificado);
+      return after.detalleModificado.size() <= 1500 && after.detalleModificado.matches('^[^/]+$')
+        && after.cantidadDetalles == before.cantidadDetalles
+          + (existsAfter(detail) ? 1 : 0) - (exists(detail) ? 1 : 0);
+    }
+    function validOrderUpdate(id) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return canEditOrder(before) && validOrderShape(after)
+        && after.diff(before).affectedKeys().hasOnly(['estado', 'actualizadoEn', 'revision', 'cantidadDetalles', 'detalleModificado'])
+        && after.revision == before.revision + 1 && orderLock(id, after)
+        && (after.estado == 'abierto'
+          ? validDetailCount(id, before, after)
+          : (after.cantidadDetalles == before.cantidadDetalles
+            && after.detalleModificado == before.detalleModificado
+            && (after.estado == 'cancelado' || (after.estado == 'registrado' && before.cantidadDetalles > 0))));
+    }
+    function detailMutation(order, dish) {
+      let before = get(docPath('pedidos', order)).data;
+      let after = getAfter(docPath('pedidos', order)).data;
+      return canEditOrder(before) && after.estado == 'abierto'
+        && after.revision == before.revision + 1 && after.detalleModificado == dish;
+    }
+    function validOrderItem(d) {
+      return d.keys().hasOnly(['nombre', 'precio', 'cantidad', 'observaciones'])
+        && d.nombre is string && d.nombre.size() > 0 && d.nombre.size() <= 120
+        && d.precio is number && d.precio > 0 && d.precio <= 1000000
+        && d.cantidad is int && d.cantidad >= 1 && d.cantidad <= 99
+        && d.observaciones is string && d.observaciones.size() <= 500;
+    }
+    function currentMenuItem(dish, d) {
+      let menu = get(docPath('carta', dish)).data;
+      return menu.disponible == true && menu.nombre == d.nombre && menu.precio == d.precio
+        && get(docPath('categorias', menu.categoriaId)).data.activo == true;
+    }
+    match /pedidos/{order} {
+      allow read: if canReadOrder(resource.data);
+      allow create: if canTakeOrders() && validOrderShape(request.resource.data)
+        && request.resource.data.meseroId == request.auth.uid
+        && request.resource.data.meseroNombre == get(profilePath()).data.nombre
+        && request.resource.data.estado == 'abierto' && request.resource.data.revision == 0
+        && request.resource.data.cantidadDetalles == 0 && request.resource.data.detalleModificado == ''
+        && request.resource.data.creadoEn == request.time
+        && get(docPath('mesas', request.resource.data.mesaId)).data.activo == true
+        && get(docPath('mesas', request.resource.data.mesaId)).data.pedidoActivo == null
+        && orderLock(order, request.resource.data);
+      allow update: if validOrderUpdate(order);
+      allow delete: if false;
+      match /detalles/{dish} {
+        allow read: if canReadOrder(get(docPath('pedidos', order)).data);
+        allow create: if detailMutation(order, dish) && validOrderItem(request.resource.data)
+          && currentMenuItem(dish, request.resource.data);
+        allow update: if detailMutation(order, dish) && validOrderItem(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cantidad', 'observaciones']);
+        allow delete: if detailMutation(order, dish);
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

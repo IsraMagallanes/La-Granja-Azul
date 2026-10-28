@@ -5,11 +5,11 @@ const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
 
 async function createEnv() {
   return initializeTestEnvironment({
-    projectId: 'la-granja-azul-app',
+    projectId: process.env.GCLOUD_PROJECT || 'la-granja-azul-app',
     firestore: {
       rules: fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[1]),
     },
   });
 }
