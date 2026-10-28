@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Acceso mínimo necesario. Matriz alineada con PermissionService (Flutter).
+// Los documentos de `usuarios` solo se crean/modifican desde un entorno de
+// confianza (Admin SDK); ningún cliente puede escribirlos, de modo que nadie
+// puede crear un superadmin ni cambiar su propio rol desde la app.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profilePath() {
+      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
+    }
+
+    function hasActiveProfile() {
+      return signedIn()
+        && exists(profilePath())
+        && get(profilePath()).data.activo == true;
+    }
+
+    function roleIs(roles) {
+      return hasActiveProfile() && get(profilePath()).data.rol in roles;
+    }
+
+    function isAdmin() {
+      return roleIs(['admin', 'superadmin']);
+    }
+
+    match /usuarios/{uid} {
+      // Cada usuario lee su propio perfil (incluso inactivo, para informarle).
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Carta digital: lectura pública, edición solo administración.
+    match /carta/{item} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
