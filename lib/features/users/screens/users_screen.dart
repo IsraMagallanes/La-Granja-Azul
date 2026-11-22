@@ -55,8 +55,8 @@ class UsersScreen extends ConsumerWidget {
                         separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (_, i) => _StaffTile(
                           member: pageItems[i],
-                          onTap: () => StaffDetailSheet.show(
-                              context, pageItems[i].uid),
+                          onTap: () =>
+                              StaffDetailSheet.show(context, pageItems[i].uid),
                         ),
                       ),
               ),
@@ -98,7 +98,9 @@ class UsersScreen extends ConsumerWidget {
         builder: (_) => CreatedStaffDialog(draft: draft, result: result),
       );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(ErrorMapper.map(e).message)),
+      );
     }
   }
 }
@@ -133,7 +135,10 @@ class _Filters extends ConsumerWidget {
             value: query.role,
             hint: const Text('Rol'),
             items: [
-              const DropdownMenuItem(value: null, child: Text('Todos los roles')),
+              const DropdownMenuItem(
+                value: null,
+                child: Text('Todos los roles'),
+              ),
               for (final r in UserRole.values)
                 DropdownMenuItem(value: r, child: Text(r.label)),
             ],
@@ -144,7 +149,9 @@ class _Filters extends ConsumerWidget {
             hint: const Text('Estado'),
             items: [
               const DropdownMenuItem(
-                  value: null, child: Text('Todos los estados')),
+                value: null,
+                child: Text('Todos los estados'),
+              ),
               for (final s in StaffStatus.values)
                 DropdownMenuItem(value: s, child: Text(s.label)),
             ],
@@ -169,7 +176,9 @@ class _StaffTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(
-        backgroundColor: member.activo ? scheme.primaryContainer : scheme.errorContainer,
+        backgroundColor: member.activo
+            ? scheme.primaryContainer
+            : scheme.errorContainer,
         child: Icon(member.activo ? Icons.person : Icons.person_off),
       ),
       title: Text(member.nombreCompleto),
@@ -177,12 +186,14 @@ class _StaffTile extends StatelessWidget {
         member.incompleto
             ? '${member.role.label} · Ficha incompleta'
             : '${member.role.label} · ${member.documentType.label} '
-                '${member.documentoEnmascarado} · ${member.celularEnmascarado}',
+                  '${member.documentoEnmascarado} · ${member.celularEnmascarado}',
       ),
       trailing: Chip(
-        label: Text(member.pendienteActivacion
-            ? 'Pendiente de activación'
-            : member.estado.label),
+        label: Text(
+          member.pendienteActivacion
+              ? 'Pendiente de activación'
+              : member.estado.label,
+        ),
       ),
     );
   }

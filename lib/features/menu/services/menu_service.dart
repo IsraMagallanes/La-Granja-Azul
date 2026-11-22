@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../../../core/error/app_failure.dart';
 import '../models/dish.dart';
 import '../models/menu_category.dart';
@@ -19,6 +21,10 @@ abstract final class MenuValidation {
         : null;
   }
 
+  /// La URL es opcional (el plato puede tener solo foto): vacía es válida.
+  static String? optionalImageUrl(String? value) =>
+      value == null || value.trim().isEmpty ? null : imageUrl(value);
+
   static String? imageUrl(String? value) {
     final uri = Uri.tryParse(value?.trim() ?? '');
     return uri == null ||
@@ -33,6 +39,18 @@ abstract final class MenuValidation {
 class MenuService {
   const MenuService(this._repository);
   final MenuRepository _repository;
+
+  /// Id para un plato nuevo, generado en el cliente (como `doc().id`): la foto
+  /// necesita conocerlo antes de que el plato exista.
+  static String newDishId() {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    final random = Random.secure();
+    return String.fromCharCodes(
+      List.generate(20, (_) => chars.codeUnitAt(random.nextInt(chars.length))),
+    );
+  }
+
   Future<void> saveCategory(MenuCategory category) {
     final error = MenuValidation.requiredText(category.name);
     if (error != null) throw AppFailure(error);
@@ -51,7 +69,7 @@ class MenuService {
         MenuValidation.requiredText(dish.description, max: 2000) ??
         MenuValidation.requiredText(dish.categoryId, max: 1500) ??
         MenuValidation.price(dish.price.toString()) ??
-        MenuValidation.imageUrl(dish.imageUrl);
+        MenuValidation.optionalImageUrl(dish.imageUrl);
     if (error != null) throw AppFailure(error);
     return _repository.saveDish(
       Dish(

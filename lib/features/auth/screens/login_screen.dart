@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/validators/validators.dart';
 import '../../../core/widgets/centered_card.dart';
@@ -40,6 +39,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final loading = ref.watch(authControllerProvider).isLoading;
+    final label = Theme.of(context).textTheme.titleSmall;
     return Scaffold(
       body: CenteredCard(
         child: Form(
@@ -50,21 +50,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  AppConfig.appName,
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  'Iniciar sesión',
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
+                Text('Correo electrónico', style: label),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _email,
                   enabled: !loading,
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.username],
-                  decoration:
-                      const InputDecoration(labelText: 'Correo electrónico'),
+                  decoration: const InputDecoration(
+                    hintText: 'correo@ejemplo.com',
+                  ),
                   validator: Validators.email,
                 ),
                 const SizedBox(height: 16),
+                Text('Contraseña', style: label),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _password,
                   enabled: !loading,
@@ -72,8 +78,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   autofillHints: const [AutofillHints.password],
                   onFieldSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
-                    labelText: 'Contraseña',
+                    hintText: 'Ingrese su contraseña',
                     suffixIcon: IconButton(
+                      tooltip: _obscure
+                          ? 'Mostrar contraseña'
+                          : 'Ocultar contraseña',
                       icon: Icon(
                         _obscure ? Icons.visibility : Icons.visibility_off,
                       ),
@@ -82,10 +91,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   validator: Validators.password,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 const AuthErrorText(),
                 AuthSubmitButton(
-                  label: 'Iniciar sesión',
+                  label: 'Ingresar',
                   loading: loading,
                   onPressed: _submit,
                 ),

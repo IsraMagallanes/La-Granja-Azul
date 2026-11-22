@@ -26,20 +26,26 @@ class EmailRequester {
   Future<EmailOutcome> sendPasswordReset(String email) async {
     final normalized = email.trim().toLowerCase();
     final outcome = await _guard.run(
-        'reset:$normalized', () => _auth.sendPasswordReset(normalized));
+      'reset:$normalized',
+      () => _auth.sendPasswordReset(normalized),
+    );
     return _describe(
       outcome,
-      accepted: 'Firebase aceptó la solicitud. Si el correo está registrado, '
+      accepted:
+          'Firebase aceptó la solicitud. Si el correo está registrado, '
           'el enlace llegará en unos minutos (revisa también spam).',
     );
   }
 
   Future<EmailOutcome> sendVerification() async {
-    final outcome =
-        await _guard.run('verify', () => _auth.sendEmailVerification());
+    final outcome = await _guard.run(
+      'verify',
+      () => _auth.sendEmailVerification(),
+    );
     return _describe(
       outcome,
-      accepted: 'Firebase aceptó el envío de la verificación. '
+      accepted:
+          'Firebase aceptó el envío de la verificación. '
           'Revisa tu correo (y spam) en unos minutos.',
     );
   }
@@ -48,11 +54,14 @@ class EmailRequester {
       switch (outcome) {
         GuardDone() => EmailOutcome(true, accepted),
         GuardBusy() => const EmailOutcome(
-            false, 'Ya hay una solicitud en curso. Espera su resultado.'),
+          false,
+          'Ya hay una solicitud en curso. Espera su resultado.',
+        ),
         GuardCoolingDown(:final left) => EmailOutcome(
-            false,
-            'Ya se solicitó hace poco. Podrás reintentar en '
-            '${left.inSeconds + 1} s.'),
+          false,
+          'Ya se solicitó hace poco. Podrás reintentar en '
+          '${left.inSeconds + 1} s.',
+        ),
         GuardFailed(:final failure) => EmailOutcome(false, failure.message),
       };
 }

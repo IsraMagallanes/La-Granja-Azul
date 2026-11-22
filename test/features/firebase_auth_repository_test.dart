@@ -71,24 +71,34 @@ void main() {
       await pumpEventQueue();
 
       expect(user.calls, ['reload', 'getIdToken(true)']);
-      expect(seen.last, const AuthAccount(uid: 'u1', email: 'sa@gmail.com', emailVerified: true));
+      expect(
+        seen.last,
+        const AuthAccount(
+          uid: 'u1',
+          email: 'sa@gmail.com',
+          emailVerified: true,
+        ),
+      );
       await sub.cancel();
     });
 
-    test('si aún no verificó, no cambia el estado (sin falsos positivos)', () async {
-      final user = _FakeUser(verifiedAfterReload: false);
-      final repo = FirebaseAuthRepository(_FakeFirebaseAuth(user));
-      final seen = <AuthAccount?>[];
-      final sub = repo.authStateChanges().distinct().listen(seen.add);
-      await pumpEventQueue();
+    test(
+      'si aún no verificó, no cambia el estado (sin falsos positivos)',
+      () async {
+        final user = _FakeUser(verifiedAfterReload: false);
+        final repo = FirebaseAuthRepository(_FakeFirebaseAuth(user));
+        final seen = <AuthAccount?>[];
+        final sub = repo.authStateChanges().distinct().listen(seen.add);
+        await pumpEventQueue();
 
-      await repo.reloadAccount();
-      await pumpEventQueue();
+        await repo.reloadAccount();
+        await pumpEventQueue();
 
-      expect(seen, hasLength(1));
-      expect(seen.single?.emailVerified, isFalse);
-      await sub.cancel();
-    });
+        expect(seen, hasLength(1));
+        expect(seen.single?.emailVerified, isFalse);
+        await sub.cancel();
+      },
+    );
 
     test('sin sesión no hace nada', () async {
       final auth = _NoUserAuth();

@@ -23,5 +23,11 @@ Future<DateTime?> pickLimaDateTime(
     helpText: helpText,
   );
   if (time == null) return null;
-  return LimaTime.instant(date.year, date.month, date.day, time.hour, time.minute);
+  return LimaTime.instant(
+    date.year,
+    date.month,
+    date.day,
+    time.hour,
+    time.minute,
+  );
 }

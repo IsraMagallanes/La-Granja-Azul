@@ -1,6 +1,6 @@
 # Estado del proyecto — La Granja Azul
 
-Última actualización: 2026-10-26 (Fase 3)
+Última actualización: 2026-11-12 (Fase 3 histórica + diseño visual del Plan maestro; la planificación vigente está en `README.md`)
 
 ## Resumen
 
@@ -24,8 +24,12 @@ lib/
     config/      AppConfig, FirestorePaths
     error/       AppFailure, ErrorMapper
     routing/     AppRoute (catálogo), AuthRedirect (lógica pura), app_router
-    shell/       StaffShell (navegación responsiva por rol)
-    theme/ validators/ widgets/
+    shell/       StaffShell (panel lateral azul marino responsivo por rol)
+    theme/       AppColors (paleta), AppTheme (tema único claro)
+    widgets/     BrandWordmark/BrandBackdrop, StatusPill/StatCard/PanelCard/FilterPill,
+                 PageBody/SectionHeader/StateMessage, Interactive/Reveal (animación),
+                 CenteredCard, Breakpoints, ModulePlaceholder
+    validators/
   features/
     auth/        modelos de sesión, AuthRepository (+Firebase), controladores, pantallas
     users/       AppUser, UserRepository (+Firestore), StaffProvisioningService (contrato)
@@ -33,6 +37,18 @@ lib/
     admin/ waiters/ kitchen/ cashier/ tables/ menu/ orders/ inventory/ reports/
                  pantallas base (placeholders); la lógica no está implementada.
 ```
+
+### Diseño visual (Plan maestro, Fase 1 — 2026-11-12)
+
+Modelo obligatorio: `docs/referencias/diseno.jpeg`. Tema único claro (no hay
+tema oscuro): encabezados azul marino con el logotipo tipográfico en blanco,
+fondos blancos, azul intenso en acciones y etiquetas de estado verde/amarillo/
+rojo suaves. El plato de marca es `assets/images/plato.png` (recorte de
+`docs/referencias/plato.png`) y aparece animado en los encabezados. Navegación:
+panel lateral (≥ 840 dp extendido, 600–839 solo iconos) o cajón en celular.
+Rediseñadas: acceso y pantallas de cuenta, dashboard, carta pública, mesas,
+pedidos y administración de carta. El resto hereda el tema. Detalle y
+pendientes: tabla «Registro de fases» del `README.md`.
 
 ### Roles y permisos
 

@@ -17,7 +17,7 @@ class GranjaAzulApp extends ConsumerWidget {
     return MaterialApp.router(
       title: AppConfig.appName,
       theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light,
       routerConfig: ref.watch(routerProvider),
     );
   }

@@ -34,10 +34,7 @@ class WorkerDay {
 /// Resumen del día (hora de Lima): presentes, tardanzas y ausencias. Solo
 /// informa; no aplica sanciones ni descuentos.
 class AttendanceReport {
-  const AttendanceReport({
-    required this.days,
-    required this.present,
-  });
+  const AttendanceReport({required this.days, required this.present});
 
   /// Trabajadores con turno ese día.
   final List<WorkerDay> days;
@@ -45,12 +42,18 @@ class AttendanceReport {
   /// Jornadas abiertas (incluye turnos nocturnos iniciados el día anterior).
   final List<AttendanceRecord> present;
 
-  List<WorkerDay> get late =>
-      [for (final d in days) if (d.status == DayStatus.tardanza) d];
-  List<WorkerDay> get absent =>
-      [for (final d in days) if (d.status == DayStatus.ausente) d];
-  List<WorkerDay> get onTime =>
-      [for (final d in days) if (d.status == DayStatus.puntual) d];
+  List<WorkerDay> get late => [
+    for (final d in days)
+      if (d.status == DayStatus.tardanza) d,
+  ];
+  List<WorkerDay> get absent => [
+    for (final d in days)
+      if (d.status == DayStatus.ausente) d,
+  ];
+  List<WorkerDay> get onTime => [
+    for (final d in days)
+      if (d.status == DayStatus.puntual) d,
+  ];
 
   /// Antelación con la que se acepta una entrada para un turno.
   static const earlyWindow = Duration(hours: 4);
@@ -77,35 +80,48 @@ class AttendanceReport {
       final start = schedule.startOn(today);
       final end = schedule.endOn(today);
       final record = (byUid[member.uid] ?? const <AttendanceRecord>[])
-          .where((r) =>
-              !r.entrada.isBefore(start.subtract(earlyWindow)) &&
-              !r.entrada.isAfter(end))
+          .where(
+            (r) =>
+                !r.entrada.isBefore(start.subtract(earlyWindow)) &&
+                !r.entrada.isAfter(end),
+          )
           .fold<AttendanceRecord?>(
-              null, (a, b) => a == null || b.entrada.isBefore(a.entrada) ? b : a);
+            null,
+            (a, b) => a == null || b.entrada.isBefore(a.entrada) ? b : a,
+          );
 
       if (record != null) {
         final late = schedule.lateMinutes(record.entrada);
-        days.add(WorkerDay(
-          staff: member,
-          schedule: schedule,
-          record: record,
-          lateMinutes: late,
-          status: late > 0 ? DayStatus.tardanza : DayStatus.puntual,
-        ));
+        days.add(
+          WorkerDay(
+            staff: member,
+            schedule: schedule,
+            record: record,
+            lateMinutes: late,
+            status: late > 0 ? DayStatus.tardanza : DayStatus.puntual,
+          ),
+        );
       } else {
         final deadline = start.add(Duration(minutes: schedule.toleranciaMin));
-        days.add(WorkerDay(
-          staff: member,
-          schedule: schedule,
-          status: now.isAfter(deadline) ? DayStatus.ausente : DayStatus.pendiente,
-        ));
+        days.add(
+          WorkerDay(
+            staff: member,
+            schedule: schedule,
+            status: now.isAfter(deadline)
+                ? DayStatus.ausente
+                : DayStatus.pendiente,
+          ),
+        );
       }
     }
     days.sort((a, b) => a.staff.apellidos.compareTo(b.staff.apellidos));
 
     return AttendanceReport(
       days: days,
-      present: [for (final r in records) if (r.abierta) r],
+      present: [
+        for (final r in records)
+          if (r.abierta) r,
+      ],
     );
   }
 }

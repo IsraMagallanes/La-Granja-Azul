@@ -8,7 +8,7 @@ const {
   assertSucceeds,
   assertFails,
 } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs, collection } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs, collection, Bytes, serverTimestamp } = require('firebase/firestore');
 
 let env;
 
@@ -177,4 +177,52 @@ test('regresión: reglas anteriores bloquean categorías incluso para un adminis
     await legacy.clearFirestore();
     await legacy.cleanup();
   }
+});
+
+// ------------------------------------------------------- Fase 3: fotos de platos
+const photo = (size = 5000, extra = {}) => ({
+  foto: Bytes.fromUint8Array(new Uint8Array(size).fill(7)),
+  tipo: 'image/jpeg',
+  actualizadoEn: serverTimestamp(),
+  ...extra,
+});
+
+test('la URL de imagen es opcional (plato solo con foto) pero, si existe, debe ser HTTPS', async () => {
+  const db = as('admin');
+  await assertSucceeds(setDoc(doc(db, 'carta/sinurl'), { ...dish, imagenUrl: '' }));
+  await assertFails(setDoc(doc(db, 'carta/mala'), { ...dish, imagenUrl: 'http://example.com/a.jpg' }));
+  await assertFails(setDoc(doc(db, 'carta/larga'), { ...dish, imagenUrl: 'https://e.com/' + 'a'.repeat(2048) }));
+});
+
+test('fotos: lectura pública; solo admin y superadmin activos escriben', async () => {
+  await assertSucceeds(setDoc(doc(as('admin'), 'cartaFotos/plato1'), photo()));
+  await assertSucceeds(setDoc(doc(as('super'), 'cartaFotos/plato1'), photo(6000)));
+  await assertSucceeds(getDoc(doc(anon(), 'cartaFotos/plato1')));
+  for (const who of ['mesero', 'cocina', 'cajero', 'almacen', 'inactivo']) {
+    await assertFails(setDoc(doc(as(who), 'cartaFotos/plato1'), photo()));
+    await assertFails(deleteDoc(doc(as(who), 'cartaFotos/plato1')));
+  }
+  await assertFails(setDoc(doc(anon(), 'cartaFotos/plato1'), photo()));
+  await assertFails(deleteDoc(doc(anon(), 'cartaFotos/plato1')));
+});
+
+test('fotos: solo JPEG de hasta 100 KB, con los campos exactos y para un plato existente', async () => {
+  const db = as('admin');
+  await assertSucceeds(setDoc(doc(db, 'cartaFotos/plato1'), photo(100000)));
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), photo(100001)));
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), photo(0)));
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), photo(5000, { tipo: 'image/png' })));
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), photo(5000, { extra: 1 })));
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), photo(5000, { foto: 'texto' })));
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), photo(5000, { actualizadoEn: new Date(0) })));
+  await assertFails(setDoc(doc(db, 'cartaFotos/no-existe'), photo()));
+  const incompleta = photo();
+  delete incompleta.tipo;
+  await assertFails(setDoc(doc(db, 'cartaFotos/plato1'), incompleta));
+});
+
+test('fotos: el admin puede quitarla y el plato conserva sus datos', async () => {
+  await assertSucceeds(setDoc(doc(as('admin'), 'cartaFotos/plato1'), photo()));
+  await assertSucceeds(deleteDoc(doc(as('admin'), 'cartaFotos/plato1')));
+  await assertSucceeds(getDoc(doc(as('admin'), 'carta/plato1')));
 });

@@ -26,8 +26,9 @@ abstract final class Validators {
   static final _dni = RegExp(r'^\d{8}$');
   static final _carnetExtranjeria = RegExp(r'^[A-Z0-9]{9,12}$');
   static final _celular = RegExp(r'^9\d{8}$');
-  static final _persona =
-      RegExp(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ .'-]*$");
+  static final _persona = RegExp(
+    r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ .'-]*$",
+  );
 
   static String? dni(String? value) {
     final empty = required(value, field: 'El DNI');

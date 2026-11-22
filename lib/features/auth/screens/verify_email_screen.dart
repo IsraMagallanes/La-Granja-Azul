@@ -64,8 +64,10 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
           children: [
             const Icon(Icons.mark_email_unread_outlined, size: 48),
             const SizedBox(height: 16),
-            Text('Verifica tu correo',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Verifica tu correo',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
               'Para entrar necesitas verificar $email. Abre el enlace que te '
@@ -76,8 +78,10 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
             FilledButton(
               onPressed: _busy
                   ? null
-                  : () => _run(auth.reloadAccount,
-                      'Aún no aparece verificado. Abre el enlace del correo.'),
+                  : () => _run(
+                      auth.reloadAccount,
+                      'Aún no aparece verificado. Abre el enlace del correo.',
+                    ),
               child: const Text('Ya verifiqué'),
             ),
             const SizedBox(height: 8),

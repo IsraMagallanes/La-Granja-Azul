@@ -15,37 +15,48 @@ import '../support/phase3_fakes.dart';
 
 void main() {
   group('modal de baja / suspensión', () {
-    Future<StatusChange?> open(WidgetTester tester, StaffStatus target,
-        {bool member = true}) async {
+    Future<StatusChange?> open(
+      WidgetTester tester,
+      StaffStatus target, {
+      bool member = true,
+    }) async {
       StatusChange? result;
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () async => result = await StatusChangeDialog.show(
-              context,
-              member: memberOf('m1'),
-              target: target,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await StatusChangeDialog.show(
+                context,
+                member: memberOf('m1'),
+                target: target,
+              ),
+              child: const Text('abrir'),
             ),
-            child: const Text('abrir'),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('abrir'));
       await tester.pumpAndSettle();
       return result;
     }
 
-    testWidgets('exige confirmación, tipo de motivo y motivo escrito', (tester) async {
+    testWidgets('exige confirmación, tipo de motivo y motivo escrito', (
+      tester,
+    ) async {
       await open(tester, StaffStatus.baja);
       expect(find.text('Dar de baja'), findsOneWidget);
 
       // Sin confirmar, el botón está deshabilitado.
-      var confirm = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirmar'));
+      var confirm = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Confirmar'),
+      );
       expect(confirm.onPressed, isNull);
 
       await tester.tap(find.byType(CheckboxListTile));
       await tester.pump();
-      confirm = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirmar'));
+      confirm = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Confirmar'),
+      );
       expect(confirm.onPressed, isNotNull);
 
       // Confirmado pero sin motivo: sigue abierto y muestra errores.
@@ -56,7 +67,9 @@ void main() {
       expect(find.byType(AlertDialog), findsOneWidget);
     });
 
-    testWidgets('ofrece Renuncia, Despido y Otro al dar de baja', (tester) async {
+    testWidgets('ofrece Renuncia, Despido y Otro al dar de baja', (
+      tester,
+    ) async {
       await open(tester, StaffStatus.baja);
       await tester.tap(find.byType(DropdownButtonFormField<LeaveReason>));
       await tester.pumpAndSettle();
@@ -65,7 +78,9 @@ void main() {
       expect(find.text('Otro'), findsWidgets);
     });
 
-    testWidgets('suspender ofrece Suspensión y Otro (no Renuncia)', (tester) async {
+    testWidgets('suspender ofrece Suspensión y Otro (no Renuncia)', (
+      tester,
+    ) async {
       await open(tester, StaffStatus.suspendido);
       await tester.tap(find.byType(DropdownButtonFormField<LeaveReason>));
       await tester.pumpAndSettle();
@@ -73,11 +88,14 @@ void main() {
       expect(find.text('Renuncia'), findsNothing);
     });
 
-    testWidgets('reactivar no pide tipo de motivo, pero sí texto y confirmación', (tester) async {
-      await open(tester, StaffStatus.activo);
-      expect(find.byType(DropdownButtonFormField<LeaveReason>), findsNothing);
-      expect(find.text('Reactivar trabajador'), findsOneWidget);
-    });
+    testWidgets(
+      'reactivar no pide tipo de motivo, pero sí texto y confirmación',
+      (tester) async {
+        await open(tester, StaffStatus.activo);
+        expect(find.byType(DropdownButtonFormField<LeaveReason>), findsNothing);
+        expect(find.text('Reactivar trabajador'), findsOneWidget);
+      },
+    );
   });
 
   group('app del trabajador: QR', () {
@@ -88,39 +106,54 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final repo = FakeWorkerAttendanceRepository();
-      await tester.pumpWidget(ProviderScope(
-        overrides: [
-          sessionProvider.overrideWith((ref) => Stream.value(Authenticated(worker))),
-          workerAttendanceRepositoryProvider.overrideWithValue(repo),
-          schedulesProvider.overrideWith((ref) => Stream.value(const <Schedule>[])),
-        ],
-        child: const MaterialApp(home: Scaffold(body: MyAttendanceScreen())),
-      ));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sessionProvider.overrideWith(
+              (ref) => Stream.value(Authenticated(worker)),
+            ),
+            workerAttendanceRepositoryProvider.overrideWithValue(repo),
+            schedulesProvider.overrideWith(
+              (ref) => Stream.value(const <Schedule>[]),
+            ),
+          ],
+          child: const MaterialApp(home: Scaffold(body: MyAttendanceScreen())),
+        ),
+      );
       await tester.pumpAndSettle();
       return repo;
     }
 
-    testWidgets('muestra QR temporal con contador; generarlo no registra asistencia', (tester) async {
-      final repo = await pump(tester);
-      expect(find.text('Generar QR de entrada'), findsOneWidget);
-      expect(find.text('Generar QR de salida'), findsOneWidget);
+    testWidgets(
+      'muestra QR temporal con contador; generarlo no registra asistencia',
+      (tester) async {
+        final repo = await pump(tester);
+        expect(find.text('Generar QR de entrada'), findsOneWidget);
+        expect(find.text('Generar QR de salida'), findsOneWidget);
 
-      await tester.tap(find.text('Generar QR de entrada'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.text('Generar QR de entrada'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
 
-      expect(repo.tokensCreated, hasLength(1));
-      expect(find.textContaining('Vence en'), findsOneWidget);
-      expect(find.text('QR de entrada'), findsOneWidget);
+        expect(repo.tokensCreated, hasLength(1));
+        expect(find.textContaining('Vence en'), findsOneWidget);
+        expect(find.text('QR de entrada'), findsOneWidget);
 
-      // Descarta el temporizador para terminar la prueba.
-      await tester.pumpWidget(const SizedBox());
-    });
+        // Descarta el temporizador para terminar la prueba.
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
 
-    testWidgets('sin entrada abierta no se puede pedir el QR de salida', (tester) async {
+    testWidgets('sin entrada abierta no se puede pedir el QR de salida', (
+      tester,
+    ) async {
       final repo = await pump(tester);
       final button = tester.widget<ButtonStyleButton>(
-          find.ancestor(of: find.text('Generar QR de salida'), matching: find.byWidgetPredicate((w) => w is ButtonStyleButton)));
+        find.ancestor(
+          of: find.text('Generar QR de salida'),
+          matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+        ),
+      );
       expect(button.onPressed, isNull);
       expect(repo.tokensCreated, isEmpty);
     });

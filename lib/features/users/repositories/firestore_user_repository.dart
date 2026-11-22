@@ -16,9 +16,9 @@ class FirestoreUserRepository implements UserRepository {
         .doc(uid)
         .snapshots()
         .map((doc) {
-      final data = doc.data();
-      return data == null ? null : AppUser.fromMap(doc.id, data);
-    });
+          final data = doc.data();
+          return data == null ? null : AppUser.fromMap(doc.id, data);
+        });
   }
 
   @override

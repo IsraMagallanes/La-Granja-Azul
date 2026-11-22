@@ -23,24 +23,34 @@ class AuthRedirect {
 
     return switch (session) {
       null => route == AppRoute.loading ? null : AppRoute.loading.path,
-      Unauthenticated() => _anonymousRoutes.contains(route)
-          ? null
-          : (AppConfig.publicEntryIsMenu ? AppRoute.publicMenu : AppRoute.login)
-              .path,
+      Unauthenticated() =>
+        _anonymousRoutes.contains(route)
+            ? null
+            : (AppConfig.publicEntryIsMenu
+                      ? AppRoute.publicMenu
+                      : AppRoute.login)
+                  .path,
       AccessDenied() =>
         route == AppRoute.accessDenied ? null : AppRoute.accessDenied.path,
       EmailUnverified() =>
         route == AppRoute.verifyEmail ? null : AppRoute.verifyEmail.path,
-      TerminalAuthenticated() => route == AppRoute.attendanceTerminal
-          ? null
-          : AppRoute.attendanceTerminal.path,
-      Authenticated(:final user) => _forUser(route, user.role),
+      TerminalAuthenticated() =>
+        route == AppRoute.attendanceTerminal
+            ? null
+            : AppRoute.attendanceTerminal.path,
+      Authenticated(:final user, :final onShift) => _forUser(
+        route,
+        user.role,
+        onShift,
+      ),
     };
   }
 
-  String? _forUser(AppRoute? route, UserRole role) {
-    final home = _navigation.homeFor(role).path;
+  /// Sin jornada abierta, los roles no exentos solo conservan las rutas no
+  /// operativas (p. ej. «Mi asistencia»): su inicio pasa a ser esa pantalla.
+  String? _forUser(AppRoute? route, UserRole role, bool onShift) {
+    final home = _navigation.homeFor(role, onShift: onShift).path;
     if (route == null || !route.isStaff) return home;
-    return _navigation.canAccess(role, route) ? null : home;
+    return _navigation.canAccess(role, route, onShift: onShift) ? null : home;
   }
 }

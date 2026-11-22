@@ -19,12 +19,14 @@ beforeEach(async () => {
     for (const [uid,rol] of Object.entries({w1:'mesero',w2:'mesero',admin:'admin',super:'superadmin',k:'cocina',cash:'cajero',stock:'almacen',inactive:'mesero'})) {
       await setDoc(doc(db,'usuarios',uid),{rol,nombre:`Usuario ${uid}`,activo:uid!=='inactive'});
     }
+    // Fase 2: el personal no exento necesita la jornada abierta para operar.
+    for (const uid of ['w1','w2','k','cash','inactive']) await setDoc(doc(db,'estadoAsistencia',uid),{abierta:true,asistenciaId:'a'+uid});
     await setDoc(doc(db,'categorias/aves'),{nombre:'Aves',activo:true});
     await setDoc(doc(db,'carta/pollo'),{nombre:'Pollo',descripcion:'Brasa',categoriaId:'aves',precio:25.5,imagenUrl:'https://example.com/a.jpg',disponible:true});
     await setDoc(doc(db,'mesas/1'),{numero:'1',capacidad:4,activo:true,pedidoActivo:null});
   });
 });
-const db = uid => env.authenticatedContext(uid,{email_verified:true}).firestore();
+const db = uid => { const d=env.authenticatedContext(uid,{email_verified:true}).firestore(); d.uid=uid; return d; };
 const anon = () => env.unauthenticatedContext().firestore();
 function orderData(uid,table='1') {return {mesaId:table,meseroId:uid,meseroNombre:`Usuario ${uid}`,estado:'abierto',revision:0,cantidadDetalles:0,detalleModificado:'',creadoEn:serverTimestamp(),actualizadoEn:serverTimestamp()};}
 async function open(database,uid,id,table='1') {
@@ -48,10 +50,12 @@ async function item(database,id,{quantity=2,notes='Sin sal',mode='add',patch={}}
     tx.update(ref,{revision:order.revision+1,cantidadDetalles:order.cantidadDetalles+(mode==='add'?1:mode==='remove'?-1:0),detalleModificado:'pollo',actualizadoEn:serverTimestamp()});
   });
 }
-async function status(database,id,state) {
+async function status(database,id,state,uid,patch={}) {
   return runTransaction(database,async tx=>{
     const ref=doc(database,'pedidos',id);const d=(await tx.get(ref)).data();
-    tx.update(ref,{estado:state,revision:d.revision+1,actualizadoEn:serverTimestamp()});
+    const why=state==='cancelado'?{motivoCancelacion:'Cliente se fue',canceladoPor:uid}
+      :state==='registrado'?{estadoCocina:'pendiente',registradoEn:serverTimestamp()}:{};
+    tx.update(ref,{estado:state,revision:d.revision+1,actualizadoEn:serverTimestamp(),...why,...patch});
     if(state==='cancelado')tx.update(doc(database,'mesas',d.mesaId),{pedidoActivo:null});
   });
 }
@@ -89,14 +93,14 @@ test('no se puede desactivar, borrar ni liberar una mesa ocupada por fuera del p
 test('cancelar libera la mesa atómicamente y permite un nuevo pedido',async()=>{
   await open(db('w1'),'w1','a');await item(db('w1'),'a');
   await assertFails(updateDoc(doc(db('w1'),'pedidos/a'),{estado:'cancelado',revision:2,actualizadoEn:serverTimestamp()}));
-  await assertSucceeds(status(db('w1'),'a','cancelado'));
+  await assertSucceeds(status(db('w1'),'a','cancelado','w1'));
   await assertSucceeds(open(db('w2'),'w2','b'));
   await assertFails(item(db('w1'),'a',{mode:'edit'}));
 });
 test('pedido vacío no se registra, y registrado es inmutable y mantiene mesa ocupada',async()=>{
   await open(db('w1'),'w1','a');await assertFails(status(db('w1'),'a','registrado'));
   await item(db('w1'),'a');await assertSucceeds(status(db('w1'),'a','registrado'));
-  await assertFails(item(db('w1'),'a',{mode:'edit'}));await assertFails(status(db('admin'),'a','cancelado'));
+  await assertFails(item(db('w1'),'a',{mode:'edit'}));await assertFails(status(db('admin'),'a','cancelado','admin'));
   await assertFails(status(db('admin'),'a','abierto'));await assert.rejects(open(db('w2'),'w2','b'),/ocupada/);
   const database=db('w2');const batch=writeBatch(database);batch.set(doc(database,'pedidos/b'),orderData('w2'));batch.update(doc(database,'mesas/1'),{pedidoActivo:'b'});await assertFails(batch.commit());
 });
@@ -138,7 +142,7 @@ test('administradores gestionan pedidos abiertos ajenos sin reasignar responsabl
   await open(db('w1'),'w1','a');await assertSucceeds(item(db('admin'),'a'));
   await assertSucceeds(item(db('super'),'a',{mode:'edit',quantity:5}));
   await assertFails(updateDoc(doc(db('super'),'pedidos/a'),{meseroId:'super',revision:3,actualizadoEn:serverTimestamp()}));
-  await assertSucceeds(status(db('admin'),'a','cancelado'));
+  await assertSucceeds(status(db('admin'),'a','cancelado','admin'));
 });
 test('cocina y caja solo consultan; almacén, anónimo, inactivo y correo no verificado sin acceso',async()=>{
   await open(db('w1'),'w1','a');await item(db('w1'),'a');
@@ -181,4 +185,143 @@ test('desactivar y abrir simultáneamente nunca deja pedido en mesa inactiva',as
   const orders=await getDocs(collection(db('admin'),'pedidos'));
   assert.ok(table.activo || orders.empty);
   assert.equal(table.pedidoActivo!==null,orders.size===1);
+});
+
+test('cancelar exige motivo y a quien cancela; el pedido conserva ambos',async()=>{
+  await open(db('w1'),'w1','a');await item(db('w1'),'a');
+  for(const patch of [{motivoCancelacion:''},{motivoCancelacion:'ab'},{motivoCancelacion:'x'.repeat(201)},{canceladoPor:'w2'},{canceladoPor:'admin'}])
+    await assertFails(status(db('w1'),'a','cancelado','w1',patch));
+  // Sin los campos (cliente antiguo) tampoco se puede cancelar.
+  const legacy=db('w1');
+  await assertFails(runTransaction(legacy,async tx=>{
+    const ref=doc(legacy,'pedidos/a');const d=(await tx.get(ref)).data();
+    tx.update(ref,{estado:'cancelado',revision:d.revision+1,actualizadoEn:serverTimestamp()});
+    tx.update(doc(legacy,'mesas/1'),{pedidoActivo:null});
+  }));
+  await assertSucceeds(status(db('w1'),'a','cancelado','w1'));
+  const order=(await getDoc(doc(db('admin'),'pedidos/a'))).data();
+  assert.equal(order.motivoCancelacion,'Cliente se fue');assert.equal(order.canceladoPor,'w1');
+});
+test('el motivo de cancelación no entra en pedidos abiertos ni registrados',async()=>{
+  await open(db('w1'),'w1','a');await item(db('w1'),'a');
+  await assertFails(updateDoc(doc(db('w1'),'pedidos/a'),{motivoCancelacion:'Cliente se fue',canceladoPor:'w1',revision:2,actualizadoEn:serverTimestamp()}));
+  await assertFails(status(db('w1'),'a','registrado','w1',{motivoCancelacion:'Cliente se fue',canceladoPor:'w1'}));
+  const database=db('w2');const batch=writeBatch(database);
+  batch.set(doc(database,'pedidos/b'),{...orderData('w2'),motivoCancelacion:'Cliente se fue',canceladoPor:'w2'});
+  batch.update(doc(database,'mesas/1'),{pedidoActivo:'b'});
+  await assertFails(batch.commit());
+});
+test('un pedido cancelado no se puede reabrir ni cambiar su motivo',async()=>{
+  await open(db('w1'),'w1','a');await assertSucceeds(status(db('w1'),'a','cancelado','w1'));
+  await assertFails(updateDoc(doc(db('admin'),'pedidos/a'),{motivoCancelacion:'Otro',revision:2,actualizadoEn:serverTimestamp()}));
+  await assertFails(updateDoc(doc(db('admin'),'pedidos/a'),{estado:'abierto',revision:2,actualizadoEn:serverTimestamp()}));
+});
+
+// ------------------------------------------------------------ Fase 5: cocina
+async function kitchen(database,id,to,patch={}) {
+  return runTransaction(database,async tx=>{
+    const ref=doc(database,'pedidos',id);const d=(await tx.get(ref)).data();
+    const stamp={preparando:{preparandoEn:serverTimestamp(),cocinaPor:'k'},listo:{listoEn:serverTimestamp()},entregado:{entregadoEn:serverTimestamp()}}[to]||{};
+    // Fase 8B: pasar a «listo» exige el documento de descuento (aquí sin insumos).
+    if(to==='listo'&&database.uid) tx.set(doc(database,'descuentosInventario',id),{insumos:0,platosSinReceta:0,insumosOmitidos:0,creadoPor:database.uid,creadoPorNombre:'Usuario '+database.uid,creadoEn:serverTimestamp()});
+    tx.update(ref,{estadoCocina:to,revision:d.revision+1,actualizadoEn:serverTimestamp(),...stamp,...patch});
+  });
+}
+async function registered(uid='w1',id='a') {
+  await open(db(uid),uid,id);await item(db(uid),id);await status(db(uid),id,'registrado',uid);
+}
+test('registrar deja el pedido pendiente en cocina con la hora del servidor',async()=>{
+  await registered();
+  const o=(await getDoc(doc(db('admin'),'pedidos/a'))).data();
+  assert.equal(o.estado,'registrado');assert.equal(o.estadoCocina,'pendiente');assert.ok(o.registradoEn);
+});
+test('no se registra sin entrar a cocina, ni con otro estado o hora falsa',async()=>{
+  await open(db('w1'),'w1','a');await item(db('w1'),'a');
+  const legacy=db('w1');
+  await assertFails(runTransaction(legacy,async tx=>{const ref=doc(legacy,'pedidos/a');const d=(await tx.get(ref)).data();
+    tx.update(ref,{estado:'registrado',revision:d.revision+1,actualizadoEn:serverTimestamp()});}));
+  await assertFails(status(db('w1'),'a','registrado','w1',{estadoCocina:'listo'}));
+  await assertFails(status(db('w1'),'a','registrado','w1',{registradoEn:new Date(0)}));
+  await assertFails(status(db('w1'),'a','registrado','w1',{preparandoEn:serverTimestamp()}));
+  await assertSucceeds(status(db('w1'),'a','registrado','w1'));
+});
+test('flujo completo: cocina prepara y marca listo; el mesero responsable entrega',async()=>{
+  await registered();
+  await assertSucceeds(kitchen(db('k'),'a','preparando'));
+  await assertSucceeds(kitchen(db('k'),'a','listo'));
+  await assertFails(kitchen(db('k'),'a','entregado'));
+  await assertFails(kitchen(db('w2'),'a','entregado'));
+  await assertFails(kitchen(db('cash'),'a','entregado'));
+  await assertSucceeds(kitchen(db('w1'),'a','entregado'));
+  const o=(await getDoc(doc(db('admin'),'pedidos/a'))).data();
+  assert.equal(o.estadoCocina,'entregado');
+  for(const f of ['preparandoEn','listoEn','entregadoEn','cocinaPor','registradoEn']) assert.ok(o[f],f);
+  assert.equal(o.cocinaPor,'k');
+  await assertFails(kitchen(db('k'),'a','listo')); // terminal
+});
+test('no se saltan ni se revierten pasos de cocina',async()=>{
+  await registered();
+  await assertFails(kitchen(db('k'),'a','listo'));
+  await assertFails(kitchen(db('k'),'a','entregado'));
+  await assertFails(kitchen(db('k'),'a','pendiente'));
+  await assertSucceeds(kitchen(db('k'),'a','preparando'));
+  await assertFails(kitchen(db('k'),'a','preparando'));
+  await assertFails(kitchen(db('k'),'a','pendiente'));
+  await assertFails(kitchen(db('k'),'a','inventado'));
+});
+test('solo cocina y administración mueven la cocina; el mesero ni el suyo',async()=>{
+  await registered();
+  for(const uid of ['w1','w2','cash','stock','inactive']) await assertFails(kitchen(db(uid),'a','preparando'));
+  await assertFails(kitchen(anon(),'a','preparando'));
+  await assertFails(kitchen(env.authenticatedContext('k',{email_verified:false}).firestore(),'a','preparando'));
+  await assertSucceeds(kitchen(db('admin'),'a','preparando',{cocinaPor:'admin'}));
+  await assertSucceeds(kitchen(db('super'),'a','listo'));
+  await assertSucceeds(kitchen(db('admin'),'a','entregado'));
+});
+test('cocina sin jornada abierta pierde el acceso; el admin está exento',async()=>{
+  await registered();
+  await env.withSecurityRulesDisabled(ctx=>updateDoc(doc(ctx.firestore(),'estadoAsistencia/k'),{abierta:false}));
+  await assertFails(kitchen(db('k'),'a','preparando'));
+  await assertFails(getDoc(doc(db('k'),'pedidos/a')));
+  await assertSucceeds(kitchen(db('admin'),'a','preparando',{cocinaPor:'admin'}));
+});
+test('el mesero sin jornada abierta no entrega',async()=>{
+  await registered();await kitchen(db('k'),'a','preparando');await kitchen(db('k'),'a','listo');
+  await env.withSecurityRulesDisabled(ctx=>updateDoc(doc(ctx.firestore(),'estadoAsistencia/w1'),{abierta:false}));
+  await assertFails(kitchen(db('w1'),'a','entregado'));
+  await assertSucceeds(kitchen(db('admin'),'a','entregado'));
+});
+test('la actualización de cocina no cambia nada más del pedido',async()=>{
+  await registered();
+  for(const patch of [{meseroId:'k'},{meseroNombre:'Falso'},{mesaId:'2'},{estado:'cancelado',motivoCancelacion:'abc def',canceladoPor:'k'},
+    {cantidadDetalles:0},{detalleModificado:'otro'},{preparandoEn:new Date(0)},{cocinaPor:'w2'},{extra:1},{registradoEn:serverTimestamp()},
+    {revision:99}])
+    await assertFails(kitchen(db('k'),'a','preparando',patch));
+  await assertFails(kitchen(db('k'),'a','preparando',{listoEn:serverTimestamp()}));
+  await assertSucceeds(kitchen(db('k'),'a','preparando'));
+});
+test('cocina no edita ni cancela pedidos, y un pedido abierto o cancelado no entra a cocina',async()=>{
+  await open(db('w1'),'w1','a');await item(db('w1'),'a');
+  await assertFails(kitchen(db('k'),'a','preparando')); // abierto
+  await assertFails(status(db('k'),'a','registrado','k'));
+  await assertFails(status(db('k'),'a','cancelado','k'));
+  await assertSucceeds(status(db('w1'),'a','cancelado','w1'));
+  await assertFails(kitchen(db('k'),'a','preparando')); // cancelado
+  await assertFails(updateDoc(doc(db('admin'),'pedidos/a'),{estadoCocina:'pendiente',revision:3,actualizadoEn:serverTimestamp()}));
+});
+test('un pedido registrado antes de la Fase 5 cuenta como pendiente',async()=>{
+  await env.withSecurityRulesDisabled(async ctx=>{
+    const d=ctx.firestore();
+    await setDoc(doc(d,'mesas/1'),{numero:'1',capacidad:4,activo:true,pedidoActivo:'old'});
+    await setDoc(doc(d,'pedidos/old'),{mesaId:'1',meseroId:'w1',meseroNombre:'Usuario w1',estado:'registrado',revision:2,
+      cantidadDetalles:1,detalleModificado:'pollo',creadoEn:new Date(),actualizadoEn:new Date()});
+  });
+  await assertSucceeds(kitchen(db('k'),'old','preparando'));
+});
+test('el estado de cocina es legible para quien ve el pedido y no para ajenos',async()=>{
+  await registered();
+  await assertSucceeds(getDoc(doc(db('k'),'pedidos/a')));
+  await assertSucceeds(getDoc(doc(db('w1'),'pedidos/a')));
+  await assertFails(getDoc(doc(db('w2'),'pedidos/a')));
+  await assertFails(getDoc(doc(db('stock'),'pedidos/a')));
 });

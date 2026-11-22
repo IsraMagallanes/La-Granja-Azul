@@ -9,8 +9,9 @@ import '../models/schedule.dart';
 import 'attendance_repositories.dart';
 
 CollectionReference<Map<String, dynamic>> _col(
-        FirebaseFirestore db, String name) =>
-    db.collection(name);
+  FirebaseFirestore db,
+  String name,
+) => db.collection(name);
 
 class FirestoreWorkerAttendanceRepository
     implements WorkerAttendanceRepository {
@@ -20,7 +21,10 @@ class FirestoreWorkerAttendanceRepository
 
   @override
   Future<QrToken> createToken(
-      AppUser worker, PunchType type, String tokenId) async {
+    AppUser worker,
+    PunchType type,
+    String tokenId,
+  ) async {
     final ref = _col(_db, FirestorePaths.qrTokens).doc(tokenId);
     // `nombreMostrar` (solo nombres de pila) lo valida la regla contra el
     // perfil; el QR en sí únicamente contiene el id del token.
@@ -37,15 +41,22 @@ class FirestoreWorkerAttendanceRepository
   }
 
   @override
-  Stream<QrToken?> watchToken(String tokenId) => _col(_db, FirestorePaths.qrTokens)
-      .doc(tokenId)
-      .snapshots()
-      .map((d) => d.data() == null ? null : QrToken.fromMap(d.id, d.data()!));
+  Stream<QrToken?> watchToken(String tokenId) =>
+      _col(_db, FirestorePaths.qrTokens)
+          .doc(tokenId)
+          .snapshots()
+          .map(
+            (d) => d.data() == null ? null : QrToken.fromMap(d.id, d.data()!),
+          );
 
   @override
   Stream<AttendanceState?> watchState(String uid) =>
-      _col(_db, FirestorePaths.estadoAsistencia).doc(uid).snapshots().map(
-          (d) => d.data() == null ? null : AttendanceState.fromMap(d.data()!));
+      _col(_db, FirestorePaths.estadoAsistencia)
+          .doc(uid)
+          .snapshots()
+          .map(
+            (d) => d.data() == null ? null : AttendanceState.fromMap(d.data()!),
+          );
 
   @override
   Stream<List<AttendanceRecord>> watchHistory(String uid, {int limit = 30}) =>
@@ -61,9 +72,11 @@ class FirestoreWorkerAttendanceRepository
       _col(_db, FirestorePaths.correcciones)
           .where('uid', isEqualTo: uid)
           .snapshots()
-          .map((s) => [
-                for (final d in s.docs) CorrectionRequest.fromMap(d.id, d.data()),
-              ]..sort((a, b) => b.fecha.compareTo(a.fecha)));
+          .map(
+            (s) => [
+              for (final d in s.docs) CorrectionRequest.fromMap(d.id, d.data()),
+            ]..sort((a, b) => b.fecha.compareTo(a.fecha)),
+          );
 
   @override
   Future<void> requestCorrection({
@@ -71,21 +84,19 @@ class FirestoreWorkerAttendanceRepository
     required String fecha,
     required String tipo,
     required String motivo,
-  }) =>
-      _col(_db, FirestorePaths.correcciones).add({
-        'uid': uid,
-        'fecha': fecha,
-        'tipo': tipo,
-        'motivo': motivo.trim(),
-        'estado': CorrectionStatus.pendiente.value,
-        'creadoEn': FieldValue.serverTimestamp(),
-      });
+  }) => _col(_db, FirestorePaths.correcciones).add({
+    'uid': uid,
+    'fecha': fecha,
+    'tipo': tipo,
+    'motivo': motivo.trim(),
+    'estado': CorrectionStatus.pendiente.value,
+    'creadoEn': FieldValue.serverTimestamp(),
+  });
 }
 
 List<AttendanceRecord> _records(QuerySnapshot<Map<String, dynamic>> s) => [
-      for (final d in s.docs)
-        ?AttendanceRecord.fromMap(d.id, d.data()),
-    ];
+  for (final d in s.docs) ?AttendanceRecord.fromMap(d.id, d.data()),
+];
 
 class FirestoreTerminalScanRepository implements TerminalScanRepository {
   FirestoreTerminalScanRepository(this._db);
@@ -101,7 +112,10 @@ class FirestoreTerminalScanRepository implements TerminalScanRepository {
 
   @override
   Future<AttendanceState?> fetchState(String uid) async {
-    final snap = await _col(_db, FirestorePaths.estadoAsistencia).doc(uid).get();
+    final snap = await _col(
+      _db,
+      FirestorePaths.estadoAsistencia,
+    ).doc(uid).get();
     final data = snap.data();
     return data == null ? null : AttendanceState.fromMap(data);
   }
@@ -185,11 +199,9 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
           .map(_records);
 
   @override
-  Stream<List<Schedule>> watchSchedules() =>
-      _col(_db, FirestorePaths.horarios).snapshots().map((s) => [
-            for (final d in s.docs)
-              ?Schedule.fromMap(d.id, d.data()),
-          ]);
+  Stream<List<Schedule>> watchSchedules() => _col(_db, FirestorePaths.horarios)
+      .snapshots()
+      .map((s) => [for (final d in s.docs) ?Schedule.fromMap(d.id, d.data())]);
 
   @override
   Future<void> saveSchedule(AppUser actor, Schedule schedule) async {
@@ -197,8 +209,13 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
         ? _col(_db, FirestorePaths.horarios).doc()
         : _col(_db, FirestorePaths.horarios).doc(schedule.id);
     final batch = _db.batch();
-    final auditId = addAuditEntry(_db, batch,
-        actor: actor, accion: AuditAction.guardarHorario, objetivo: ref.id);
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: AuditAction.guardarHorario,
+      objetivo: ref.id,
+    );
     batch.set(ref, {
       ...schedule.toMap(),
       'actualizadoEn': FieldValue.serverTimestamp(),
@@ -217,11 +234,14 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
     required String motivo,
   }) async {
     final batch = _db.batch();
-    final auditId = addAuditEntry(_db, batch,
-        actor: actor,
-        accion: AuditAction.regularizarAsistencia,
-        objetivo: uid,
-        campos: ['entrada', if (salida != null) 'salida']);
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: AuditAction.regularizarAsistencia,
+      objetivo: uid,
+      campos: ['entrada', if (salida != null) 'salida'],
+    );
     final ref = _col(_db, FirestorePaths.asistencias).doc();
     batch.set(ref, {
       'uid': uid,
@@ -255,14 +275,17 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
     required bool closesOpenState,
   }) async {
     final batch = _db.batch();
-    final auditId = addAuditEntry(_db, batch,
-        actor: actor,
-        accion: AuditAction.regularizarAsistencia,
-        objetivo: record.uid,
-        campos: [
-          if (entrada != record.entrada) 'entrada',
-          if (salida != record.salida) 'salida',
-        ]);
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: AuditAction.regularizarAsistencia,
+      objetivo: record.uid,
+      campos: [
+        if (entrada != record.entrada) 'entrada',
+        if (salida != record.salida) 'salida',
+      ],
+    );
     batch.update(_col(_db, FirestorePaths.asistencias).doc(record.id), {
       'entrada': Timestamp.fromDate(entrada),
       'salida': salida == null ? null : Timestamp.fromDate(salida),
@@ -285,9 +308,11 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
 
   @override
   Stream<List<CorrectionRequest>> watchAllCorrections() =>
-      _col(_db, FirestorePaths.correcciones).snapshots().map((s) => [
-            for (final d in s.docs) CorrectionRequest.fromMap(d.id, d.data()),
-          ]..sort((a, b) => b.fecha.compareTo(a.fecha)));
+      _col(_db, FirestorePaths.correcciones).snapshots().map(
+        (s) =>
+            [for (final d in s.docs) CorrectionRequest.fromMap(d.id, d.data())]
+              ..sort((a, b) => b.fecha.compareTo(a.fecha)),
+      );
 
   @override
   Future<void> resolveCorrection(
@@ -297,13 +322,17 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
     required String respuesta,
   }) async {
     final batch = _db.batch();
-    final auditId = addAuditEntry(_db, batch,
-        actor: actor,
-        accion: AuditAction.resolverCorreccion,
-        objetivo: request.uid);
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: AuditAction.resolverCorreccion,
+      objetivo: request.uid,
+    );
     batch.update(_col(_db, FirestorePaths.correcciones).doc(request.id), {
-      'estado': (approved ? CorrectionStatus.aprobada : CorrectionStatus.rechazada)
-          .value,
+      'estado':
+          (approved ? CorrectionStatus.aprobada : CorrectionStatus.rechazada)
+              .value,
       'respuesta': respuesta.trim(),
       'resueltoPor': actor.uid,
       'resueltoEn': FieldValue.serverTimestamp(),
@@ -320,40 +349,135 @@ class FirestoreTerminalRepository implements TerminalRepository {
 
   @override
   Stream<AttendanceTerminal?> watchTerminal(String uid) =>
-      _col(_db, FirestorePaths.terminales).doc(uid).snapshots().map((d) =>
-          d.data() == null ? null : AttendanceTerminal.fromMap(d.id, d.data()!));
+      _col(_db, FirestorePaths.terminales)
+          .doc(uid)
+          .snapshots()
+          .map(
+            (d) => d.data() == null
+                ? null
+                : AttendanceTerminal.fromMap(d.id, d.data()!),
+          );
 
   @override
   Stream<List<AttendanceTerminal>> watchAll() =>
-      _col(_db, FirestorePaths.terminales).snapshots().map((s) => [
-            for (final d in s.docs) AttendanceTerminal.fromMap(d.id, d.data()),
-          ]);
+      _col(_db, FirestorePaths.terminales).snapshots().map(
+        (s) => [
+          for (final d in s.docs) AttendanceTerminal.fromMap(d.id, d.data()),
+        ],
+      );
 
   @override
-  Future<void> authorize(AppUser actor,
-          {required String nombre, required String uid}) =>
-      _write(actor, uid, nombre, true, AuditAction.autorizarTerminal);
+  Future<void> authorize(
+    AppUser actor, {
+    required String nombre,
+    required String uid,
+  }) => _write(actor, uid, nombre, true, AuditAction.autorizarTerminal);
 
   @override
-  Future<void> setActive(AppUser actor, AttendanceTerminal terminal,
-          {required bool active}) =>
-      _write(actor, terminal.uid, terminal.nombre, active,
-          active ? AuditAction.autorizarTerminal : AuditAction.revocarTerminal);
+  Future<void> setActive(
+    AppUser actor,
+    AttendanceTerminal terminal, {
+    required bool active,
+  }) {
+    final batch = _db.batch();
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: active
+          ? AuditAction.autorizarTerminal
+          : AuditAction.revocarTerminal,
+      objetivo: terminal.uid,
+    );
+    _setTerminal(batch, actor, terminal.uid, terminal.nombre, active, auditId);
+    // Al inhabilitar se invalida el enlace con el dispositivo; reactivar NO lo
+    // recupera: la tablet debe enlazarse de nuevo.
+    if (!active) {
+      batch.delete(_col(_db, FirestorePaths.terminalClaves).doc(terminal.uid));
+    } else {
+      // Reactivar cancela una solicitud de eliminación pendiente.
+      batch.delete(
+        _col(
+          _db,
+          FirestorePaths.solicitudesEliminacionTerminal,
+        ).doc(terminal.uid),
+      );
+    }
+    return batch.commit();
+  }
+
+  @override
+  Stream<Set<String>> watchDeletionRequests() => _col(
+    _db,
+    FirestorePaths.solicitudesEliminacionTerminal,
+  ).snapshots().map((s) => {for (final d in s.docs) d.id});
+
+  @override
+  Future<void> requestDeletion(AppUser actor, AttendanceTerminal terminal) {
+    final batch = _db.batch();
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: AuditAction.solicitarEliminacionTerminal,
+      objetivo: terminal.uid,
+    );
+    batch.set(
+      _col(
+        _db,
+        FirestorePaths.solicitudesEliminacionTerminal,
+      ).doc(terminal.uid),
+      {
+        'nombre': terminal.nombre.trim(),
+        'solicitadoPor': actor.uid,
+        'solicitadoEn': FieldValue.serverTimestamp(),
+        'ultimaAuditoriaId': auditId,
+      },
+    );
+    return batch.commit();
+  }
 
   @override
   Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal) {
     final batch = _db.batch();
-    addAuditEntry(_db, batch,
-        actor: actor, accion: AuditAction.restablecerTerminal, objetivo: terminal.uid);
+    addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: AuditAction.restablecerTerminal,
+      objetivo: terminal.uid,
+    );
     batch.delete(_col(_db, FirestorePaths.terminalClaves).doc(terminal.uid));
     return batch.commit();
   }
 
   Future<void> _write(
-      AppUser actor, String uid, String nombre, bool active, String action) {
+    AppUser actor,
+    String uid,
+    String nombre,
+    bool active,
+    String action,
+  ) {
     final batch = _db.batch();
-    final auditId = addAuditEntry(_db, batch,
-        actor: actor, accion: action, objetivo: uid);
+    final auditId = addAuditEntry(
+      _db,
+      batch,
+      actor: actor,
+      accion: action,
+      objetivo: uid,
+    );
+    _setTerminal(batch, actor, uid, nombre, active, auditId);
+    return batch.commit();
+  }
+
+  void _setTerminal(
+    WriteBatch batch,
+    AppUser actor,
+    String uid,
+    String nombre,
+    bool active,
+    String auditId,
+  ) {
     batch.set(_col(_db, FirestorePaths.terminales).doc(uid), {
       'nombre': nombre.trim(),
       'activo': active,
@@ -361,6 +485,5 @@ class FirestoreTerminalRepository implements TerminalRepository {
       'actualizadoEn': FieldValue.serverTimestamp(),
       'ultimaAuditoriaId': auditId,
     });
-    return batch.commit();
   }
 }

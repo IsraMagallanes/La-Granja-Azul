@@ -10,9 +10,13 @@ abstract final class LimaTime {
   static DateTime wall(DateTime instant) => instant.toUtc().add(offset);
 
   /// Instante real (UTC) de una hora de pared de Lima.
-  static DateTime instant(int year, int month, int day,
-          [int hour = 0, int minute = 0]) =>
-      DateTime.utc(year, month, day, hour, minute).subtract(offset);
+  static DateTime instant(
+    int year,
+    int month,
+    int day, [
+    int hour = 0,
+    int minute = 0,
+  ]) => DateTime.utc(year, month, day, hour, minute).subtract(offset);
 
   /// Inicio (00:00 Lima) del día de Lima que contiene a [at].
   static DateTime startOfDay(DateTime at) {
@@ -43,6 +47,8 @@ abstract final class LimaTime {
   /// Instante de inicio del día de Lima a partir de `yyyy-MM-dd`.
   static DateTime? parseDateKey(String key) {
     final parsed = DateTime.tryParse(key);
-    return parsed == null ? null : instant(parsed.year, parsed.month, parsed.day);
+    return parsed == null
+        ? null
+        : instant(parsed.year, parsed.month, parsed.day);
   }
 }

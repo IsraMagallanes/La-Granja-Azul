@@ -23,14 +23,11 @@ class StaffFormDialog extends StatefulWidget {
     BuildContext context, {
     required List<UserRole> assignableRoles,
     StaffMember? existing,
-  }) =>
-      showDialog<StaffDraft>(
-        context: context,
-        builder: (_) => StaffFormDialog(
-          assignableRoles: assignableRoles,
-          existing: existing,
-        ),
-      );
+  }) => showDialog<StaffDraft>(
+    context: context,
+    builder: (_) =>
+        StaffFormDialog(assignableRoles: assignableRoles, existing: existing),
+  );
 
   @override
   State<StaffFormDialog> createState() => _StaffFormDialogState();
@@ -39,16 +36,20 @@ class StaffFormDialog extends StatefulWidget {
 class _StaffFormDialogState extends State<StaffFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late final _nombres = TextEditingController(text: widget.existing?.nombres);
-  late final _apellidos =
-      TextEditingController(text: widget.existing?.apellidos);
-  late final _documento =
-      TextEditingController(text: widget.existing?.documento);
+  late final _apellidos = TextEditingController(
+    text: widget.existing?.apellidos,
+  );
+  late final _documento = TextEditingController(
+    text: widget.existing?.documento,
+  );
   late final _email = TextEditingController(text: widget.existing?.email);
   late final _celular = TextEditingController(text: widget.existing?.celular);
-  late final _alterno =
-      TextEditingController(text: widget.existing?.celularAlterno);
+  late final _alterno = TextEditingController(
+    text: widget.existing?.celularAlterno,
+  );
   late DocumentType _type = widget.existing?.documentType ?? DocumentType.dni;
-  late UserRole? _role = widget.existing?.role ??
+  late UserRole? _role =
+      widget.existing?.role ??
       (widget.assignableRoles.isEmpty ? null : widget.assignableRoles.last);
   late DateTime _ingreso = widget.existing?.fechaIngreso ?? DateTime.now();
 
@@ -124,14 +125,16 @@ class _StaffFormDialogState extends State<StaffFormDialog> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<DocumentType>(
                   initialValue: _type,
-                  decoration:
-                      const InputDecoration(labelText: 'Tipo de documento'),
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de documento',
+                  ),
                   items: [
                     for (final t in DocumentType.values)
                       DropdownMenuItem(value: t, child: Text(t.label)),
                   ],
-                  onChanged:
-                      _editing ? null : (v) => setState(() => _type = v!),
+                  onChanged: _editing
+                      ? null
+                      : (v) => setState(() => _type = v!),
                 ),
                 TextFormField(
                   controller: _documento,
@@ -154,7 +157,9 @@ class _StaffFormDialogState extends State<StaffFormDialog> {
                 TextFormField(
                   controller: _celular,
                   decoration: const InputDecoration(
-                      labelText: 'Celular', prefixText: '+51 '),
+                    labelText: 'Celular',
+                    prefixText: '+51 ',
+                  ),
                   keyboardType: TextInputType.phone,
                   inputFormatters: digits,
                   maxLength: 9,

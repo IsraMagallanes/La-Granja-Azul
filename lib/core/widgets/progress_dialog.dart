@@ -18,7 +18,10 @@ Future<T> runWithProgress<T>(
         content: Row(
           children: [
             const SizedBox(
-                width: 28, height: 28, child: CircularProgressIndicator()),
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(),
+            ),
             const SizedBox(width: 20),
             Expanded(child: Text(message)),
           ],

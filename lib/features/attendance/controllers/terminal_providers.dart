@@ -9,23 +9,34 @@ class NoTerminalRepository implements TerminalRepository {
   const NoTerminalRepository();
 
   @override
-  Stream<AttendanceTerminal?> watchTerminal(String uid) =>
-      Stream.value(null);
+  Stream<AttendanceTerminal?> watchTerminal(String uid) => Stream.value(null);
 
   @override
   Stream<List<AttendanceTerminal>> watchAll() => Stream.value(const []);
 
   @override
-  Future<void> authorize(actor, {required String nombre, required String uid}) =>
-      throw UnsupportedError('Repositorio de terminales no configurado.');
+  Future<void> authorize(
+    actor, {
+    required String nombre,
+    required String uid,
+  }) => throw UnsupportedError('Repositorio de terminales no configurado.');
 
   @override
-  Future<void> setActive(actor, AttendanceTerminal terminal,
-          {required bool active}) =>
-      throw UnsupportedError('Repositorio de terminales no configurado.');
+  Future<void> setActive(
+    actor,
+    AttendanceTerminal terminal, {
+    required bool active,
+  }) => throw UnsupportedError('Repositorio de terminales no configurado.');
 
   @override
   Future<void> resetDeviceLink(actor, AttendanceTerminal terminal) =>
+      throw UnsupportedError('Repositorio de terminales no configurado.');
+
+  @override
+  Stream<Set<String>> watchDeletionRequests() => Stream.value(const {});
+
+  @override
+  Future<void> requestDeletion(actor, AttendanceTerminal terminal) =>
       throw UnsupportedError('Repositorio de terminales no configurado.');
 }
 

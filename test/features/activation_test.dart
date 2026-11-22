@@ -50,7 +50,10 @@ void main() {
     test('inactivo se rechaza aunque esté verificado (y antes que "sin verificar")', () {
       final inactive = buildUser(activo: false);
       expect(SessionResolver.fromProfile(inactive), isA<AccessDenied>());
-      expect(SessionResolver.fromProfile(inactive, emailVerified: false), isA<AccessDenied>());
+      expect(
+        SessionResolver.fromProfile(inactive, emailVerified: false),
+        isA<AccessDenied>(),
+      );
     });
 
     test('sin perfil se rechaza', () {
@@ -59,24 +62,39 @@ void main() {
 
     test('las terminales no necesitan correo verificado', () {
       const t = AttendanceTerminal(uid: 't', nombre: 'Tablet', activo: true);
-      expect(SessionResolver.fromAccount(null, t, emailVerified: false), isA<TerminalAuthenticated>());
+      expect(
+        SessionResolver.fromAccount(null, t, emailVerified: false),
+        isA<TerminalAuthenticated>(),
+      );
     });
 
     test('la sesión sin verificar solo puede estar en /verificar-correo', () {
       const redirect = AuthRedirect(RoleNavigation(PermissionService()));
       final session = EmailUnverified(user);
       expect(redirect.redirect(AppRoute.verifyEmail.path, session), isNull);
-      expect(redirect.redirect(AppRoute.waiter.path, session), AppRoute.verifyEmail.path);
-      expect(redirect.redirect(AppRoute.login.path, session), AppRoute.verifyEmail.path);
+      expect(
+        redirect.redirect(AppRoute.waiter.path, session),
+        AppRoute.verifyEmail.path,
+      );
+      expect(
+        redirect.redirect(AppRoute.login.path, session),
+        AppRoute.verifyEmail.path,
+      );
       // Ya verificado no se queda en la pantalla de verificación.
-      expect(redirect.redirect(AppRoute.verifyEmail.path, Authenticated(user)), AppRoute.waiter.path);
+      expect(
+        redirect.redirect(AppRoute.verifyEmail.path, Authenticated(user)),
+        AppRoute.waiter.path,
+      );
     });
   });
 
   group('activación del trabajador', () {
     test('«Pendiente de activación» hasta la primera entrada verificada', () {
       expect(memberOf('m1').pendienteActivacion, isTrue);
-      expect(memberOf('m1', estado: StaffStatus.baja).pendienteActivacion, isFalse);
+      expect(
+        memberOf('m1', estado: StaffStatus.baja).pendienteActivacion,
+        isFalse,
+      );
       final activated = memberOf('m1');
       // activadoEn se llena desde Firestore.
       expect(
@@ -87,14 +105,17 @@ void main() {
       expect(activated.activadoEn, isNull);
     });
 
-    test('se registra una sola vez al entrar con el correo verificado', () async {
-      final users = FakeUserRepository();
-      final tracker = ActivationTracker(users);
-      final session = Authenticated(buildUser(uid: 'u1'));
-      await tracker.onSession(session);
-      await tracker.onSession(session);
-      expect(users.activated, ['u1']);
-    });
+    test(
+      'se registra una sola vez al entrar con el correo verificado',
+      () async {
+        final users = FakeUserRepository();
+        final tracker = ActivationTracker(users);
+        final session = Authenticated(buildUser(uid: 'u1'));
+        await tracker.onSession(session);
+        await tracker.onSession(session);
+        expect(users.activated, ['u1']);
+      },
+    );
 
     test('no se registra si el correo no está verificado, está inactivo o ya estaba activada', () async {
       final users = FakeUserRepository();
@@ -103,7 +124,9 @@ void main() {
       await tracker.onSession(const AccessDenied(AccessDeniedReason.inactive));
       await tracker.onSession(const Unauthenticated());
       await tracker.onSession(null);
-      await tracker.onSession(Authenticated(buildUser(uid: 'u2').copyWithActivated(DateTime(2026))));
+      await tracker.onSession(
+        Authenticated(buildUser(uid: 'u2').copyWithActivated(DateTime(2026))),
+      );
       expect(users.activated, isEmpty);
     });
 
@@ -138,7 +161,10 @@ void main() {
     test('un duplicado se detecta antes de crear cuentas', () async {
       final staff = FakeStaffRepository()..emails.add('nuevo@granja.pe');
       final service = StaffService(staff, FakeRestrictionRepository());
-      await expectLater(service.create(actorOf(UserRole.admin), draftOf()), throwsA(isA<AppFailure>()));
+      await expectLater(
+        service.create(actorOf(UserRole.admin), draftOf()),
+        throwsA(isA<AppFailure>()),
+      );
       expect(staff.created, isEmpty);
     });
   });
@@ -162,15 +188,24 @@ void main() {
     });
 
     test('rechaza celulares inválidos', () {
-      expect(() => WhatsAppInvite.uriFor(celular: '12345', nombres: 'Ana'), throwsA(isA<AppFailure>()));
-      expect(() => WhatsAppInvite.uriFor(celular: '887654321', nombres: 'Ana'), throwsA(isA<AppFailure>()));
+      expect(
+        () => WhatsAppInvite.uriFor(celular: '12345', nombres: 'Ana'),
+        throwsA(isA<AppFailure>()),
+      );
+      expect(
+        () => WhatsAppInvite.uriFor(celular: '887654321', nombres: 'Ana'),
+        throwsA(isA<AppFailure>()),
+      );
     });
 
-    test('abre WhatsApp mediante el abridor y no envía nada por su cuenta', () async {
-      final opener = _FakeOpener();
-      await WhatsAppInvite(opener).send(celular: '987654321', nombres: 'Ana');
-      expect(opener.opened!.host, 'wa.me');
-    });
+    test(
+      'abre WhatsApp mediante el abridor y no envía nada por su cuenta',
+      () async {
+        final opener = _FakeOpener();
+        await WhatsAppInvite(opener).send(celular: '987654321', nombres: 'Ana');
+        expect(opener.opened!.host, 'wa.me');
+      },
+    );
 
     test('informa si no se puede abrir WhatsApp', () async {
       final opener = _FakeOpener()..canOpen = false;
@@ -189,68 +224,91 @@ void main() {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      final users = FakeUserRepository()..users['u1'] = buildUser(role: UserRole.admin);
+      final users = FakeUserRepository()
+        ..users['u1'] = buildUser(role: UserRole.admin);
       final auth = FakeAuthRepository(initialUid: 'u1', verified: verified);
-      await tester.pumpWidget(ProviderScope(
-        overrides: [
-          authRepositoryProvider.overrideWithValue(auth),
-          userRepositoryProvider.overrideWithValue(users),
-        ],
-        child: const GranjaAzulApp(),
-      ));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authRepositoryProvider.overrideWithValue(auth),
+            userRepositoryProvider.overrideWithValue(users),
+          ],
+          child: const GranjaAzulApp(),
+        ),
+      );
       await tester.pumpAndSettle();
       return (auth, users);
     }
 
-    testWidgets('sin verificar: ve la pantalla de verificación, no el dashboard', (tester) async {
-      await pump(tester, verified: false);
-      expect(find.text('Verifica tu correo'), findsOneWidget);
-      expect(find.textContaining('Bienvenido'), findsNothing);
-    });
+    testWidgets(
+      'sin verificar: ve la pantalla de verificación, no el dashboard',
+      (tester) async {
+        await pump(tester, verified: false);
+        expect(find.text('Verifica tu correo'), findsOneWidget);
+        expect(find.textContaining('Bienvenido'), findsNothing);
+      },
+    );
 
-    testWidgets('puede reenviar la verificación y la recuperación de contraseña', (tester) async {
-      final (auth, _) = await pump(tester, verified: false);
-      await tester.tap(find.text('Reenviar correo de verificación'));
-      await tester.pumpAndSettle();
-      expect(auth.verificationsSent, 1);
-      await tester.tap(find.text('Reenviar enlace de contraseña'));
-      await tester.pumpAndSettle();
-      expect(auth.resets, ['u1@granja.pe']);
-    });
+    testWidgets(
+      'puede reenviar la verificación y la recuperación de contraseña',
+      (tester) async {
+        final (auth, _) = await pump(tester, verified: false);
+        await tester.tap(find.text('Reenviar correo de verificación'));
+        await tester.pumpAndSettle();
+        expect(auth.verificationsSent, 1);
+        await tester.tap(find.text('Reenviar enlace de contraseña'));
+        await tester.pumpAndSettle();
+        expect(auth.resets, ['u1@granja.pe']);
+      },
+    );
 
-    testWidgets('al verificar entra al dashboard y se registra la activación una vez', (tester) async {
-      final (auth, users) = await pump(tester, verified: false);
-      expect(users.activated, isEmpty);
-      await tester.tap(find.text('Ya verifiqué'));
-      await tester.pumpAndSettle();
-      expect(auth.reloads, 1);
-      expect(find.text('Bienvenido, Usuario u1'), findsOneWidget);
-      expect(users.activated, ['u1']);
-    });
+    testWidgets(
+      'al verificar entra al dashboard y se registra la activación una vez',
+      (tester) async {
+        final (auth, users) = await pump(tester, verified: false);
+        expect(users.activated, isEmpty);
+        await tester.tap(find.text('Ya verifiqué'));
+        await tester.pumpAndSettle();
+        expect(auth.reloads, 1);
+        expect(find.text('Bienvenido, Usuario u1'), findsOneWidget);
+        expect(users.activated, ['u1']);
+      },
+    );
 
-    testWidgets('verificado y activo entra directo, sin otro cambio de contraseña', (tester) async {
-      final (auth, users) = await pump(tester);
-      expect(find.text('Bienvenido, Usuario u1'), findsOneWidget);
-      expect(find.text('Verifica tu correo'), findsNothing);
-      expect(auth.resets, isEmpty);
-      expect(users.activated, ['u1']);
-    });
+    testWidgets(
+      'verificado y activo entra directo, sin otro cambio de contraseña',
+      (tester) async {
+        final (auth, users) = await pump(tester);
+        expect(find.text('Bienvenido, Usuario u1'), findsOneWidget);
+        expect(find.text('Verifica tu correo'), findsNothing);
+        expect(auth.resets, isEmpty);
+        expect(users.activated, ['u1']);
+      },
+    );
 
-    testWidgets('el perfil desactivado no entra aunque el correo esté verificado', (tester) async {
-      tester.view.physicalSize = const Size(1200, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final users = FakeUserRepository()..users['u1'] = buildUser(activo: false);
-      await tester.pumpWidget(ProviderScope(
-        overrides: [
-          authRepositoryProvider.overrideWithValue(FakeAuthRepository(initialUid: 'u1')),
-          userRepositoryProvider.overrideWithValue(users),
-        ],
-        child: const GranjaAzulApp(),
-      ));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('desactivada'), findsOneWidget);
-    });
+    testWidgets(
+      'el perfil desactivado no entra aunque el correo esté verificado',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final users = FakeUserRepository()
+          ..users['u1'] = buildUser(activo: false);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authRepositoryProvider.overrideWithValue(
+                FakeAuthRepository(initialUid: 'u1'),
+              ),
+              userRepositoryProvider.overrideWithValue(users),
+            ],
+            child: const GranjaAzulApp(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('desactivada'), findsOneWidget);
+      },
+    );
   });
 }
 

@@ -8,10 +8,7 @@ import 'staff_policy.dart';
 /// siempre con justificación y fecha de revisión. Nunca se aplican de forma
 /// automática: son un aviso al contratar.
 class RestrictionService {
-  const RestrictionService(
-    this._repo, {
-    this._policy = const StaffPolicy(),
-  });
+  const RestrictionService(this._repo, {this._policy = const StaffPolicy()});
 
   final RestrictionRepository _repo;
   final StaffPolicy _policy;
@@ -71,7 +68,8 @@ class RestrictionService {
   void _ensureSuperadmin(AppUser actor) {
     if (!_policy.canManageRestrictions(actor.role)) {
       throw const AppFailure(
-          'Solo el Superadmin gestiona restricciones de recontratación.');
+        'Solo el Superadmin gestiona restricciones de recontratación.',
+      );
     }
   }
 }

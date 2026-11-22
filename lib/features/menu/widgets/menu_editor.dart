@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../../../core/error/error_mapper.dart';
 import '../controllers/menu_providers.dart';
 import '../models/dish.dart';
 import '../models/menu_category.dart';
+import '../services/dish_photo_compressor.dart';
 import '../services/menu_service.dart';
 import 'dish_image.dart';
 
@@ -41,13 +44,45 @@ class _MenuEditorState extends ConsumerState<MenuEditor> {
   late bool _enabled =
       widget.dish?.available ?? widget.category?.active ?? true;
   bool _saving = false;
+  bool _processingPhoto = false;
   String? _error;
+
+  /// Id del plato; un plato nuevo lo recibe aquí para poder guardar su foto.
+  late final String _dishId = widget.dish?.id ?? MenuService.newDishId();
+
+  /// Foto elegida (ya reducida) que se guardará con el plato.
+  Uint8List? _newPhoto;
+  bool _removePhoto = false;
   @override
   void dispose() {
     for (final controller in [_name, _description, _price, _image]) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    setState(() {
+      _processingPhoto = true;
+      _error = null;
+    });
+    try {
+      final original = await ref.read(dishPhotoPickerProvider).pick();
+      if (original == null) return;
+      // Deja pintar el indicador antes de la parte pesada de la reducción.
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final jpeg = DishPhotoCompressor.fit(original);
+      if (mounted) {
+        setState(() {
+          _newPhoto = jpeg;
+          _removePhoto = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = ErrorMapper.map(error).message);
+    } finally {
+      if (mounted) setState(() => _processingPhoto = false);
+    }
   }
 
   Future<void> _save() async {
@@ -61,7 +96,7 @@ class _MenuEditorState extends ConsumerState<MenuEditor> {
       if (widget.isDish) {
         await service.saveDish(
           Dish(
-            id: widget.dish?.id ?? '',
+            id: _dishId,
             name: _name.text,
             description: _description.text,
             categoryId: _categoryId!,
@@ -70,6 +105,16 @@ class _MenuEditorState extends ConsumerState<MenuEditor> {
             available: _enabled,
           ),
         );
+        // La foto va después: sus reglas exigen que el plato ya exista. Si
+        // falla, el plato quedó guardado y «Guardar» reintenta solo la foto.
+        final photos = ref.read(dishPhotoRepositoryProvider);
+        if (_newPhoto != null) {
+          await photos.save(_dishId, _newPhoto!);
+          ref.invalidate(dishPhotoProvider(_dishId));
+        } else if (_removePhoto) {
+          await photos.remove(_dishId);
+          ref.invalidate(dishPhotoProvider(_dishId));
+        }
       } else {
         await service.saveCategory(
           MenuCategory(
@@ -85,6 +130,14 @@ class _MenuEditorState extends ConsumerState<MenuEditor> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// ¿Tiene el plato una foto (guardada o recién elegida) que se pueda quitar?
+  bool get _hasPhoto {
+    if (_newPhoto != null) return true;
+    final id = widget.dish?.id;
+    if (_removePhoto || id == null) return false;
+    return ref.watch(dishPhotoProvider(id)).value != null;
   }
 
   @override
@@ -147,16 +200,72 @@ class _MenuEditorState extends ConsumerState<MenuEditor> {
                       ),
                       validator: MenuValidation.price,
                     ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: DishImage(
+                        dishId: _removePhoto ? null : widget.dish?.id,
+                        bytes: _newPhoto,
+                        url:
+                            MenuValidation.optionalImageUrl(_image.text) == null
+                            ? _image.text.trim()
+                            : '',
+                        height: 160,
+                      ),
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _saving || _processingPhoto
+                              ? null
+                              : _pickPhoto,
+                          icon: _processingPhoto
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.add_a_photo_outlined),
+                          label: Text(
+                            _processingPhoto
+                                ? 'Procesando...'
+                                : _hasPhoto
+                                ? 'Cambiar foto'
+                                : 'Elegir foto',
+                          ),
+                        ),
+                        if (_hasPhoto)
+                          TextButton.icon(
+                            onPressed: _saving || _processingPhoto
+                                ? null
+                                : () => setState(() {
+                                    _newPhoto = null;
+                                    _removePhoto = true;
+                                  }),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Quitar foto'),
+                          ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(
+                        'La foto se reduce automáticamente (máx. 100 KB). '
+                        'Si no hay foto se usa la URL, si la hay.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
                     TextFormField(
                       controller: _image,
                       decoration: const InputDecoration(
-                        labelText: 'URL HTTPS de la imagen',
+                        labelText: 'URL HTTPS de la imagen (opcional)',
                       ),
-                      validator: MenuValidation.imageUrl,
+                      validator: MenuValidation.optionalImageUrl,
                       onChanged: (_) => setState(() {}),
                     ),
-                    if (MenuValidation.imageUrl(_image.text) == null)
-                      DishImage(url: _image.text.trim()),
                   ],
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,

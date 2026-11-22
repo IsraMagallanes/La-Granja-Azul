@@ -21,12 +21,11 @@ class StatusChangeDialog extends StatefulWidget {
     BuildContext context, {
     required StaffMember member,
     required StaffStatus target,
-  }) =>
-      showDialog<StatusChange>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => StatusChangeDialog(member: member, target: target),
-      );
+  }) => showDialog<StatusChange>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => StatusChangeDialog(member: member, target: target),
+  );
 
   @override
   State<StatusChangeDialog> createState() => _StatusChangeDialogState();
@@ -45,10 +44,10 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
       : const [LeaveReason.renuncia, LeaveReason.despido, LeaveReason.otro];
 
   String get _title => switch (widget.target) {
-        StaffStatus.activo => 'Reactivar trabajador',
-        StaffStatus.suspendido => 'Suspender trabajador',
-        StaffStatus.baja => 'Dar de baja',
-      };
+    StaffStatus.activo => 'Reactivar trabajador',
+    StaffStatus.suspendido => 'Suspender trabajador',
+    StaffStatus.baja => 'Dar de baja',
+  };
 
   @override
   void dispose() {
@@ -81,19 +80,24 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.member.nombreCompleto,
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  widget.member.nombreCompleto,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 const SizedBox(height: 4),
-                Text(_reactivating
-                    ? 'Recupera el acceso a la aplicación.'
-                    : 'Bloquea el acceso a la aplicación. La cuenta y el '
-                        'historial se conservan.'),
+                Text(
+                  _reactivating
+                      ? 'Recupera el acceso a la aplicación.'
+                      : 'Bloquea el acceso a la aplicación. La cuenta y el '
+                            'historial se conservan.',
+                ),
                 const SizedBox(height: 16),
                 if (!_reactivating)
                   DropdownButtonFormField<LeaveReason>(
                     initialValue: _reason,
-                    decoration:
-                        const InputDecoration(labelText: 'Tipo de motivo'),
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de motivo',
+                    ),
                     items: [
                       for (final r in _options)
                         DropdownMenuItem(value: r, child: Text(r.label)),

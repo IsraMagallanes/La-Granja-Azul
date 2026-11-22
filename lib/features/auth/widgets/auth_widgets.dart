@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/motion.dart';
 import '../controllers/auth_controller.dart';
 
 /// Muestra el error actual del [AuthController], si existe.
@@ -36,14 +37,18 @@ class AuthSubmitButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: loading ? null : onPressed,
-      child: loading
-          ? const SizedBox.square(
-              dimension: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Text(label),
+    return Interactive(
+      hoverScale: 1.02,
+      glow: true,
+      child: FilledButton(
+        onPressed: loading ? null : onPressed,
+        child: loading
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(label),
+      ),
     );
   }
 }

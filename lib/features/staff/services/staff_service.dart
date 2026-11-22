@@ -11,8 +11,12 @@ import 'staff_policy.dart';
 import 'staff_validator.dart';
 
 class CreateStaffResult {
-  const CreateStaffResult(this.uid,
-      {this.restriction, this.resetEmailSent = true, this.verificationSent = true});
+  const CreateStaffResult(
+    this.uid, {
+    this.restriction,
+    this.resetEmailSent = true,
+    this.verificationSent = true,
+  });
 
   final String uid;
 
@@ -50,11 +54,13 @@ class StaffService {
     final documento = draft.documentoNormalizado;
     if (await _staff.documentExists(documento)) {
       throw const AppFailure(
-          'Ya existe un trabajador (activo o dado de baja) con ese documento.');
+        'Ya existe un trabajador (activo o dado de baja) con ese documento.',
+      );
     }
     if (await _staff.emailExists(draft.emailNormalizado)) {
       throw const AppFailure(
-          'Ya existe un trabajador (activo o dado de baja) con ese correo.');
+        'Ya existe un trabajador (activo o dado de baja) con ese correo.',
+      );
     }
     final restriction = await _restrictions.find(documento);
     final created = await _staff.create(draft, actor: actor);
@@ -112,8 +118,11 @@ class StaffService {
     if (target.role != UserRole.admin) {
       throw const AppFailure('Solo se autoriza a administradores.');
     }
-    await _staff.setRegularizationPermission(target,
-        allowed: allowed, actor: actor);
+    await _staff.setRegularizationPermission(
+      target,
+      allowed: allowed,
+      actor: actor,
+    );
   }
 
   Future<void> assignSchedule(

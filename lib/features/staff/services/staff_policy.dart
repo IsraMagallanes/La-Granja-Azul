@@ -16,10 +16,10 @@ class StaffPolicy {
   /// Roles que [actor] puede asignar al crear o editar. Nadie crea
   /// superadmins desde la app (solo `tools/create_superadmin.js`).
   Set<UserRole> assignableRoles(UserRole actor) => switch (actor) {
-        UserRole.superadmin => {UserRole.admin, ...operationalRoles},
-        UserRole.admin => operationalRoles,
-        _ => const {},
-      };
+    UserRole.superadmin => {UserRole.admin, ...operationalRoles},
+    UserRole.admin => operationalRoles,
+    _ => const {},
+  };
 
   bool canAssign(UserRole actor, UserRole role) =>
       assignableRoles(actor).contains(role);
@@ -30,8 +30,7 @@ class StaffPolicy {
     required UserRole actorRole,
     required String actorUid,
     required StaffMember target,
-  }) =>
-      target.uid != actorUid && canAssign(actorRole, target.role);
+  }) => target.uid != actorUid && canAssign(actorRole, target.role);
 
   /// Solo el Superadmin administra restricciones de recontratación.
   bool canManageRestrictions(UserRole actor) => actor == UserRole.superadmin;

@@ -6,11 +6,16 @@ import '../models/session_state.dart';
 abstract final class SessionResolver {
   /// Acceso al dashboard: perfil existente, `activo = true` y correo
   /// verificado. Un perfil inactivo se rechaza antes que uno sin verificar.
-  static SessionState fromProfile(AppUser? user, {bool emailVerified = true}) {
+  /// [onShift] es la jornada abierta del trabajador (ver `Authenticated`).
+  static SessionState fromProfile(
+    AppUser? user, {
+    bool emailVerified = true,
+    bool onShift = true,
+  }) {
     if (user == null) return const AccessDenied(AccessDeniedReason.noProfile);
     if (!user.activo) return const AccessDenied(AccessDeniedReason.inactive);
     if (!emailVerified) return EmailUnverified(user);
-    return Authenticated(user);
+    return Authenticated(user, onShift: onShift);
   }
 
   /// Una cuenta sin perfil de personal puede ser una terminal autorizada

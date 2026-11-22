@@ -12,7 +12,11 @@ import '../services/staff_service.dart';
 /// Solo se cierra con «Finalizar», para no perder estas opciones por un toque
 /// accidental fuera del diálogo.
 class CreatedStaffDialog extends ConsumerStatefulWidget {
-  const CreatedStaffDialog({super.key, required this.draft, required this.result});
+  const CreatedStaffDialog({
+    super.key,
+    required this.draft,
+    required this.result,
+  });
 
   final StaffDraft draft;
   final CreateStaffResult result;
@@ -45,11 +49,13 @@ class _CreatedStaffDialogState extends ConsumerState<CreatedStaffDialog> {
   Future<void> _openWhatsApp() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(whatsAppInviteProvider).send(
-          celular: widget.draft.celular, nombres: widget.draft.nombres);
+      await ref
+          .read(whatsAppInviteProvider)
+          .send(celular: widget.draft.celular, nombres: widget.draft.nombres);
     } catch (e) {
-      messenger
-          .showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(ErrorMapper.map(e).message)),
+      );
     }
   }
 
@@ -60,8 +66,10 @@ class _CreatedStaffDialogState extends ConsumerState<CreatedStaffDialog> {
         ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading: Icon(ok ? Icons.mark_email_read : Icons.error_outline,
-              color: ok ? null : error),
+          leading: Icon(
+            ok ? Icons.mark_email_read : Icons.error_outline,
+            color: ok ? null : error,
+          ),
           title: Text(ok ? okText : failText),
           subtitle: ok ? null : action,
         );
@@ -73,11 +81,15 @@ class _CreatedStaffDialogState extends ConsumerState<CreatedStaffDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${draft.nombres} ${draft.apellidos}',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              '${draft.nombres} ${draft.apellidos}',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 4),
-            const Text('Estado: Pendiente de activación. Se activará cuando '
-                'defina su contraseña y verifique su correo.'),
+            const Text(
+              'Estado: Pendiente de activación. Se activará cuando '
+              'defina su contraseña y verifique su correo.',
+            ),
             const SizedBox(height: 8),
             line(
               _resetOk,
@@ -89,9 +101,10 @@ class _CreatedStaffDialogState extends ConsumerState<CreatedStaffDialog> {
                     ? const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
                         child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       )
                     : TextButton(
                         onPressed: _retryReset,

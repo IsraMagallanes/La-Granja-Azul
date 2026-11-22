@@ -40,11 +40,9 @@ class WhatsAppInvite {
   static Uri uriFor({required String celular, required String nombres}) {
     final error = Validators.celular(celular);
     if (error != null) throw AppFailure(error);
-    return Uri.https(
-      'wa.me',
-      '/$countryCode${celular.trim()}',
-      {'text': message(nombres)},
-    );
+    return Uri.https('wa.me', '/$countryCode${celular.trim()}', {
+      'text': message(nombres),
+    });
   }
 
   Future<void> send({required String celular, required String nombres}) async {
@@ -52,7 +50,8 @@ class WhatsAppInvite {
     final opened = await _opener.open(uri);
     if (!opened) {
       throw const AppFailure(
-          'No se pudo abrir WhatsApp. Verifica que esté instalado.');
+        'No se pudo abrir WhatsApp. Verifica que esté instalado.',
+      );
     }
   }
 }

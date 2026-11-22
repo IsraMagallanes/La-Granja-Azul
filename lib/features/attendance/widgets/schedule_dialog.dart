@@ -27,11 +27,13 @@ class ScheduleDialog extends StatefulWidget {
 
   final Schedule? existing;
 
-  static Future<ScheduleInput?> show(BuildContext context, {Schedule? existing}) =>
-      showDialog<ScheduleInput>(
-        context: context,
-        builder: (_) => ScheduleDialog(existing: existing),
-      );
+  static Future<ScheduleInput?> show(
+    BuildContext context, {
+    Schedule? existing,
+  }) => showDialog<ScheduleInput>(
+    context: context,
+    builder: (_) => ScheduleDialog(existing: existing),
+  );
 
   @override
   State<ScheduleDialog> createState() => _ScheduleDialogState();
@@ -41,11 +43,14 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
   static const _dayNames = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
   late final _nombre = TextEditingController(text: widget.existing?.nombre);
-  late final _tolerancia =
-      TextEditingController(text: '${widget.existing?.toleranciaMin ?? 10}');
+  late final _tolerancia = TextEditingController(
+    text: '${widget.existing?.toleranciaMin ?? 10}',
+  );
   late String _inicio = widget.existing?.horaInicio ?? '08:00';
   late String _fin = widget.existing?.horaFin ?? '17:00';
-  late final Set<int> _dias = {...(widget.existing?.dias ?? const [1, 2, 3, 4, 5])};
+  late final Set<int> _dias = {
+    ...(widget.existing?.dias ?? const [1, 2, 3, 4, 5]),
+  };
   late bool _activo = widget.existing?.activo ?? true;
   String? _error;
 
@@ -97,7 +102,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final nocturno = Schedule.parseMinutes(_fin)! <= Schedule.parseMinutes(_inicio)!;
+    final nocturno =
+        Schedule.parseMinutes(_fin)! <= Schedule.parseMinutes(_inicio)!;
     return AlertDialog(
       title: Text(widget.existing == null ? 'Nuevo horario' : 'Editar horario'),
       content: SizedBox(
@@ -109,32 +115,38 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
             children: [
               TextField(
                 controller: _nombre,
-                decoration: const InputDecoration(labelText: 'Nombre del turno'),
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del turno',
+                ),
               ),
-              Row(children: [
-                Expanded(
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Inicio'),
-                    subtitle: Text(_inicio),
-                    onTap: () => _pick(true),
+              Row(
+                children: [
+                  Expanded(
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Inicio'),
+                      subtitle: Text(_inicio),
+                      onTap: () => _pick(true),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Fin'),
-                    subtitle: Text(_fin),
-                    onTap: () => _pick(false),
+                  Expanded(
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Fin'),
+                      subtitle: Text(_fin),
+                      onTap: () => _pick(false),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
               if (nocturno)
                 const Text('Turno nocturno: termina al día siguiente.'),
               TextField(
                 controller: _tolerancia,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Tolerancia (minutos)'),
+                decoration: const InputDecoration(
+                  labelText: 'Tolerancia (minutos)',
+                ),
               ),
               const SizedBox(height: 12),
               const Text('Días en que inicia el turno'),
@@ -145,8 +157,9 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                     FilterChip(
                       label: Text(_dayNames[i]),
                       selected: _dias.contains(i + 1),
-                      onSelected: (v) =>
-                          setState(() => v ? _dias.add(i + 1) : _dias.remove(i + 1)),
+                      onSelected: (v) => setState(
+                        () => v ? _dias.add(i + 1) : _dias.remove(i + 1),
+                      ),
                     ),
                 ],
               ),
@@ -157,13 +170,19 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                 onChanged: (v) => setState(() => _activo = v),
               ),
               if (_error != null)
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(onPressed: _submit, child: const Text('Guardar')),
       ],
     );

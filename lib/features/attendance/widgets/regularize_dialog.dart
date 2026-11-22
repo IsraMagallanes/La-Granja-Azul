@@ -44,15 +44,14 @@ class RegularizeDialog extends StatefulWidget {
     required List<StaffMember> candidates,
     AttendanceRecord? record,
     StaffMember? initialMember,
-  }) =>
-      showDialog<RegularizeInput>(
-        context: context,
-        builder: (_) => RegularizeDialog(
-          candidates: candidates,
-          record: record,
-          initialMember: initialMember,
-        ),
-      );
+  }) => showDialog<RegularizeInput>(
+    context: context,
+    builder: (_) => RegularizeDialog(
+      candidates: candidates,
+      record: record,
+      initialMember: initialMember,
+    ),
+  );
 
   @override
   State<RegularizeDialog> createState() => _RegularizeDialogState();
@@ -61,7 +60,8 @@ class RegularizeDialog extends StatefulWidget {
 class _RegularizeDialogState extends State<RegularizeDialog> {
   final _formKey = GlobalKey<FormState>();
   final _motivo = TextEditingController();
-  late StaffMember? _member = widget.initialMember ??
+  late StaffMember? _member =
+      widget.initialMember ??
       widget.candidates.where((m) => m.uid == widget.record?.uid).firstOrNull;
   late DateTime? _entrada = widget.record?.entrada;
   late DateTime? _salida = widget.record?.salida;
@@ -115,22 +115,35 @@ class _RegularizeDialogState extends State<RegularizeDialog> {
                     for (final m in widget.candidates)
                       DropdownMenuItem(value: m, child: Text(m.nombreCompleto)),
                   ],
-                  onChanged: _editing ? null : (v) => setState(() => _member = v),
+                  onChanged: _editing
+                      ? null
+                      : (v) => setState(() => _member = v),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Entrada (hora de Lima)'),
-                  subtitle: Text(_entrada == null ? 'Sin definir' : LimaTime.formatDateTime(_entrada!)),
+                  subtitle: Text(
+                    _entrada == null
+                        ? 'Sin definir'
+                        : LimaTime.formatDateTime(_entrada!),
+                  ),
                   trailing: const Icon(Icons.schedule),
                   onTap: () async {
-                    final v = await pickLimaDateTime(context, initial: _entrada);
+                    final v = await pickLimaDateTime(
+                      context,
+                      initial: _entrada,
+                    );
                     if (v != null) setState(() => _entrada = v);
                   },
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Salida (opcional)'),
-                  subtitle: Text(_salida == null ? 'Sin salida (jornada abierta)' : LimaTime.formatDateTime(_salida!)),
+                  subtitle: Text(
+                    _salida == null
+                        ? 'Sin salida (jornada abierta)'
+                        : LimaTime.formatDateTime(_salida!),
+                  ),
                   trailing: _salida == null
                       ? const Icon(Icons.schedule)
                       : IconButton(
@@ -138,7 +151,10 @@ class _RegularizeDialogState extends State<RegularizeDialog> {
                           onPressed: () => setState(() => _salida = null),
                         ),
                   onTap: () async {
-                    final v = await pickLimaDateTime(context, initial: _salida ?? _entrada);
+                    final v = await pickLimaDateTime(
+                      context,
+                      initial: _salida ?? _entrada,
+                    );
                     if (v != null) setState(() => _salida = v);
                   },
                 ),
@@ -148,24 +164,36 @@ class _RegularizeDialogState extends State<RegularizeDialog> {
                     value: _supervised,
                     onChanged: (v) => setState(() => _supervised = v ?? false),
                     title: const Text('Marcación supervisada'),
-                    subtitle: const Text('Para quien no tiene celular: la realiza un responsable presente.'),
+                    subtitle: const Text(
+                      'Para quien no tiene celular: la realiza un responsable presente.',
+                    ),
                   ),
                 TextFormField(
                   controller: _motivo,
                   maxLines: 3,
                   maxLength: 500,
-                  decoration: const InputDecoration(labelText: 'Motivo (obligatorio)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo (obligatorio)',
+                  ),
                   validator: Validators.motivo,
                 ),
                 if (_error != null)
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
               ],
             ),
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(onPressed: _submit, child: const Text('Guardar')),
       ],
     );
