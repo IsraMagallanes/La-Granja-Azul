@@ -1,0 +1,255 @@
+{
+  "shiftExemptRoles": [
+    "admin",
+    "superadmin"
+  ],
+  "modules": {
+    "dashboard": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [],
+      "update": [],
+      "delete": [],
+      "special": []
+    },
+    "staff": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [
+        "superadmin",
+        "admin"
+      ],
+      "update": [
+        "superadmin",
+        "admin"
+      ],
+      "delete": [],
+      "special": [
+        "superadmin"
+      ]
+    },
+    "roles": {
+      "read": [
+        "superadmin"
+      ],
+      "create": [],
+      "update": [],
+      "delete": [],
+      "special": []
+    },
+    "menu": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [
+        "superadmin",
+        "admin"
+      ],
+      "update": [
+        "superadmin",
+        "admin"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "tables": {
+      "read": [
+        "superadmin",
+        "admin",
+        "mesero",
+        "cajero"
+      ],
+      "create": [
+        "superadmin",
+        "admin"
+      ],
+      "update": [
+        "superadmin",
+        "admin"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "orders": {
+      "read": [
+        "superadmin",
+        "admin",
+        "mesero",
+        "cocina",
+        "cajero"
+      ],
+      "create": [
+        "superadmin",
+        "admin",
+        "mesero"
+      ],
+      "update": [
+        "superadmin",
+        "admin",
+        "mesero"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "reservations": {
+      "read": [
+        "superadmin",
+        "admin",
+        "mesero",
+        "cajero"
+      ],
+      "create": [
+        "superadmin",
+        "admin",
+        "mesero"
+      ],
+      "update": [
+        "superadmin",
+        "admin",
+        "mesero"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "kitchen": {
+      "read": [
+        "superadmin",
+        "admin",
+        "cocina"
+      ],
+      "create": [],
+      "update": [
+        "superadmin",
+        "admin",
+        "cocina"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "cashier": {
+      "read": [
+        "superadmin",
+        "admin",
+        "cajero"
+      ],
+      "create": [
+        "superadmin",
+        "admin",
+        "cajero"
+      ],
+      "update": [
+        "superadmin",
+        "admin",
+        "cajero"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "inventory": {
+      "read": [
+        "superadmin",
+        "admin",
+        "almacen"
+      ],
+      "create": [
+        "superadmin",
+        "admin",
+        "almacen"
+      ],
+      "update": [
+        "superadmin",
+        "admin",
+        "almacen"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "reports": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [],
+      "update": [],
+      "delete": [],
+      "special": []
+    },
+    "attendance": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [],
+      "update": [
+        "superadmin",
+        "admin"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "selfAttendance": {
+      "read": [
+        "superadmin",
+        "admin",
+        "mesero",
+        "cocina",
+        "cajero",
+        "almacen"
+      ],
+      "create": [
+        "superadmin",
+        "admin",
+        "mesero",
+        "cocina",
+        "cajero",
+        "almacen"
+      ],
+      "update": [],
+      "delete": [],
+      "special": []
+    },
+    "terminals": {
+      "read": [
+        "superadmin"
+      ],
+      "create": [
+        "superadmin"
+      ],
+      "update": [
+        "superadmin"
+      ],
+      "delete": [],
+      "special": [
+        "superadmin"
+      ]
+    },
+    "restrictions": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [
+        "superadmin"
+      ],
+      "update": [
+        "superadmin"
+      ],
+      "delete": [],
+      "special": []
+    },
+    "audit": {
+      "read": [
+        "superadmin"
+      ],
+      "create": [],
+      "update": [],
+      "delete": [],
+      "special": []
+    }
+  }
+}
