@@ -5,7 +5,20 @@ abstract final class FirestorePaths {
   static const usuarios = 'usuarios';
   static const carta = 'carta';
 
+  // Inventario (Fase 7 y 8B).
+  static const insumos = 'insumos';
+  static const recetas = 'recetas';
+  static const movimientosInventario = 'movimientosInventario';
+  static const descuentosInventario = 'descuentosInventario';
+  static const excepcionesInventario = 'excepcionesInventario';
+
   static const categorias = 'categorias';
+  static const cartaFotos = 'cartaFotos';
+  static const reservaciones = 'reservaciones';
+  static const pagos = 'pagos';
+  static const cajas = 'cajas';
+  static const cajaActiva = 'cajaActiva';
+  static const movimientosCaja = 'movimientosCaja';
 
   // Personal.
   static const documentos = 'documentos';
@@ -19,6 +32,8 @@ abstract final class FirestorePaths {
   static const terminales = 'terminales';
   static const terminalClaves = 'terminalClaves';
   static const terminalPruebas = 'terminalPruebas';
+  static const solicitudesEliminacionTerminal =
+      'solicitudesEliminacionTerminal';
   static const qrTokens = 'qrTokens';
   static const asistencias = 'asistencias';
   static const estadoAsistencia = 'estadoAsistencia';

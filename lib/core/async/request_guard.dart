@@ -65,11 +65,13 @@ class RequestGuard {
       _blockedUntil[key] = _now().add(cooldown);
       return const GuardDone();
     } on TimeoutException {
-      return GuardFailed(AppFailure(
-        'No se recibió respuesta a tiempo (${timeout.inSeconds} s). '
-        'No se pudo confirmar la operación: revisa tu conexión e inténtalo de nuevo.',
-        code: timeoutCode,
-      ));
+      return GuardFailed(
+        AppFailure(
+          'No se recibió respuesta a tiempo (${timeout.inSeconds} s). '
+          'No se pudo confirmar la operación: revisa tu conexión e inténtalo de nuevo.',
+          code: timeoutCode,
+        ),
+      );
     } catch (e) {
       return GuardFailed(ErrorMapper.map(e));
     } finally {

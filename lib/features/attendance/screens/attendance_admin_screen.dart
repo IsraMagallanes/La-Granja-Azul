@@ -59,11 +59,18 @@ void _toast(BuildContext context, Object error) =>
         .showSnackBar(SnackBar(content: Text(ErrorMapper.map(error).message)));
 
 /// Personal sobre el que [actor] puede regularizar (activos, jerarquía).
-List<StaffMember> _candidates(WidgetRef ref, AppUser actor, List<StaffMember> all) {
+List<StaffMember> _candidates(
+  WidgetRef ref,
+  AppUser actor,
+  List<StaffMember> all,
+) {
   final policy = ref.read(staffPolicyProvider);
   return [
     for (final m in all)
-      if (m.activo && m.uid != actor.uid && policy.canAssign(actor.role, m.role)) m,
+      if (m.activo &&
+          m.uid != actor.uid &&
+          policy.canAssign(actor.role, m.role))
+        m,
   ]..sort((a, b) => a.apellidos.compareTo(b.apellidos));
 }
 
@@ -84,7 +91,8 @@ class _TodayTab extends ConsumerWidget {
     final records = ref.watch(recordsProvider(range));
     final staff = ref.watch(staffListProvider).value ?? const [];
     final schedules = {
-      for (final s in ref.watch(schedulesProvider).value ?? const <Schedule>[]) s.id: s,
+      for (final s in ref.watch(schedulesProvider).value ?? const <Schedule>[])
+        s.id: s,
     };
     return records.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -100,19 +108,25 @@ class _TodayTab extends ConsumerWidget {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Wrap(spacing: 12, runSpacing: 12, children: [
-              _Stat('Presentes', report.present.length, Icons.how_to_reg),
-              _Stat('Puntuales', report.onTime.length, Icons.check_circle),
-              _Stat('Tardanzas', report.late.length, Icons.watch_later),
-              _Stat('Ausencias', report.absent.length, Icons.person_off),
-            ]),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _Stat('Presentes', report.present.length, Icons.how_to_reg),
+                _Stat('Puntuales', report.onTime.length, Icons.check_circle),
+                _Stat('Tardanzas', report.late.length, Icons.watch_later),
+                _Stat('Ausencias', report.absent.length, Icons.person_off),
+              ],
+            ),
             const SizedBox(height: 16),
             _Section('Presentes ahora', [
               for (final r in report.present)
                 ListTile(
                   dense: true,
                   title: Text(names[r.uid] ?? r.uid),
-                  subtitle: Text('Entrada ${LimaTime.formatDateTime(r.entrada)}'),
+                  subtitle: Text(
+                    'Entrada ${LimaTime.formatDateTime(r.entrada)}',
+                  ),
                 ),
             ]),
             _Section('Tardanzas', [
@@ -120,7 +134,9 @@ class _TodayTab extends ConsumerWidget {
                 ListTile(
                   dense: true,
                   title: Text(d.staff.nombreCompleto),
-                  subtitle: Text('${d.lateMinutes} min tarde · turno ${d.schedule.nombre}'),
+                  subtitle: Text(
+                    '${d.lateMinutes} min tarde · turno ${d.schedule.nombre}',
+                  ),
                 ),
             ]),
             _Section('Ausencias', [
@@ -128,7 +144,9 @@ class _TodayTab extends ConsumerWidget {
                 ListTile(
                   dense: true,
                   title: Text(d.staff.nombreCompleto),
-                  subtitle: Text('Turno ${d.schedule.nombre} ${d.schedule.horaInicio}–${d.schedule.horaFin}'),
+                  subtitle: Text(
+                    'Turno ${d.schedule.nombre} ${d.schedule.horaInicio}–${d.schedule.horaFin}',
+                  ),
                 ),
             ]),
             const Padding(
@@ -153,21 +171,29 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 150,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(children: [
-              Icon(icon),
-              const SizedBox(width: 8),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('$value', style: Theme.of(context).textTheme.headlineSmall),
+    width: 150,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(icon),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$value',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
                 Text(label),
-              ]),
-            ]),
-          ),
+              ],
+            ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _Section extends StatelessWidget {
@@ -178,14 +204,15 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          if (children.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('—')),
-          ...children,
-          const SizedBox(height: 8),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(title, style: Theme.of(context).textTheme.titleMedium),
+      if (children.isEmpty)
+        const Padding(padding: EdgeInsets.all(8), child: Text('—')),
+      ...children,
+      const SizedBox(height: 8),
+    ],
+  );
 }
 
 class _HistoryTab extends ConsumerStatefulWidget {
@@ -198,9 +225,10 @@ class _HistoryTab extends ConsumerStatefulWidget {
 }
 
 class _HistoryTabState extends ConsumerState<_HistoryTab> {
-  late DateTime _from =
-      LimaTime.startOfDay(DateTime.now()).subtract(const Duration(days: 7));
-  late DateTime _to = LimaTime.startOfDay(DateTime.now()).add(const Duration(days: 1));
+  late DateTime _from = LimaTime.startOfDay(DateTime.now())
+      .subtract(const Duration(days: 7));
+  late DateTime _to = LimaTime.startOfDay(DateTime.now())
+      .add(const Duration(days: 1));
   String? _uid;
   String _filter = 'todos';
 
@@ -218,9 +246,16 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
     );
     if (picked == null) return;
     setState(() {
-      _from = LimaTime.instant(picked.start.year, picked.start.month, picked.start.day);
-      _to = LimaTime.instant(picked.end.year, picked.end.month, picked.end.day)
-          .add(const Duration(days: 1));
+      _from = LimaTime.instant(
+        picked.start.year,
+        picked.start.month,
+        picked.start.day,
+      );
+      _to = LimaTime.instant(
+        picked.end.year,
+        picked.end.month,
+        picked.end.day,
+      ).add(const Duration(days: 1));
     });
   }
 
@@ -228,7 +263,11 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
     final actor = widget.actor;
     final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
     final candidates = _candidates(ref, actor, staff);
-    final input = await RegularizeDialog.show(context, candidates: candidates, record: record);
+    final input = await RegularizeDialog.show(
+      context,
+      candidates: candidates,
+      record: record,
+    );
     if (input == null || !mounted) return;
     final service = ref.read(attendanceAdminServiceProvider);
     try {
@@ -253,8 +292,9 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
         );
       }
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Marcación registrada y auditada.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Marcación registrada y auditada.')),
+        );
       }
     } catch (e) {
       if (mounted) _toast(context, e);
@@ -266,7 +306,8 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
     final records = ref.watch(recordsProvider(DateRange(_from, _to)));
     final staff = ref.watch(staffListProvider).value ?? const <StaffMember>[];
     final schedules = {
-      for (final s in ref.watch(schedulesProvider).value ?? const <Schedule>[]) s.id: s,
+      for (final s in ref.watch(schedulesProvider).value ?? const <Schedule>[])
+        s.id: s,
     };
     final byUid = {for (final m in staff) m.uid: m};
     final canRegularize = const Regularization().canRegularize(widget.actor);
@@ -283,34 +324,53 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
         children: [
           Padding(
             padding: const EdgeInsets.all(12),
-            child: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              OutlinedButton.icon(
-                onPressed: _pickRange,
-                icon: const Icon(Icons.date_range),
-                label: Text('${LimaTime.dateKey(_from)} → '
-                    '${LimaTime.dateKey(_to.subtract(const Duration(days: 1)))}'),
-              ),
-              DropdownButton<String?>(
-                value: _uid,
-                hint: const Text('Trabajador'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('Todos')),
-                  for (final m in staff)
-                    DropdownMenuItem(value: m.uid, child: Text(m.nombreCompleto)),
-                ],
-                onChanged: (v) => setState(() => _uid = v),
-              ),
-              DropdownButton<String>(
-                value: _filter,
-                items: const [
-                  DropdownMenuItem(value: 'todos', child: Text('Todas')),
-                  DropdownMenuItem(value: 'tardanzas', child: Text('Tardanzas')),
-                  DropdownMenuItem(value: 'regularizadas', child: Text('Regularizadas')),
-                  DropdownMenuItem(value: 'abiertas', child: Text('Jornadas abiertas')),
-                ],
-                onChanged: (v) => setState(() => _filter = v!),
-              ),
-            ]),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pickRange,
+                  icon: const Icon(Icons.date_range),
+                  label: Text(
+                    '${LimaTime.dateKey(_from)} → '
+                    '${LimaTime.dateKey(_to.subtract(const Duration(days: 1)))}',
+                  ),
+                ),
+                DropdownButton<String?>(
+                  value: _uid,
+                  hint: const Text('Trabajador'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Todos')),
+                    for (final m in staff)
+                      DropdownMenuItem(
+                        value: m.uid,
+                        child: Text(m.nombreCompleto),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _uid = v),
+                ),
+                DropdownButton<String>(
+                  value: _filter,
+                  items: const [
+                    DropdownMenuItem(value: 'todos', child: Text('Todas')),
+                    DropdownMenuItem(
+                      value: 'tardanzas',
+                      child: Text('Tardanzas'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'regularizadas',
+                      child: Text('Regularizadas'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'abiertas',
+                      child: Text('Jornadas abiertas'),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _filter = v!),
+                ),
+              ],
+            ),
           ),
           Expanded(
             child: records.when(
@@ -321,13 +381,15 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
                   if (_uid != null && r.uid != _uid) return false;
                   final schedule = schedules[byUid[r.uid]?.horarioId];
                   return switch (_filter) {
-                    'tardanzas' => schedule != null && schedule.lateMinutes(r.entrada) > 0,
+                    'tardanzas' =>
+                      schedule != null && schedule.lateMinutes(r.entrada) > 0,
                     'regularizadas' => r.regularizada,
                     'abiertas' => r.abierta,
                     _ => true,
                   };
                 }).toList();
-                if (list.isEmpty) return const Center(child: Text('Sin registros.'));
+                if (list.isEmpty)
+                  return const Center(child: Text('Sin registros.'));
                 return ListView.separated(
                   padding: const EdgeInsets.only(bottom: 88),
                   itemCount: list.length,
@@ -335,7 +397,9 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
                   itemBuilder: (_, i) {
                     final r = list[i];
                     final member = byUid[r.uid];
-                    final late = schedules[member?.horarioId]?.lateMinutes(r.entrada) ?? 0;
+                    final late =
+                        schedules[member?.horarioId]?.lateMinutes(r.entrada) ??
+                        0;
                     return ListTile(
                       title: Text(member?.nombreCompleto ?? r.uid),
                       subtitle: Text(
@@ -377,7 +441,9 @@ class _SchedulesTab extends ConsumerWidget {
       final input = await ScheduleDialog.show(context, existing: existing);
       if (input == null || !context.mounted) return;
       try {
-        await ref.read(attendanceAdminServiceProvider).saveSchedule(
+        await ref
+            .read(attendanceAdminServiceProvider)
+            .saveSchedule(
               actor,
               id: existing?.id ?? '',
               nombre: input.nombre,
@@ -444,10 +510,15 @@ class _CorrectionsTab extends ConsumerWidget {
           title: Text(approved ? 'Aprobar solicitud' : 'Rechazar solicitud'),
           content: TextField(
             controller: controller,
-            decoration: const InputDecoration(labelText: 'Respuesta al trabajador'),
+            decoration: const InputDecoration(
+              labelText: 'Respuesta al trabajador',
+            ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
             FilledButton(
               onPressed: () => Navigator.pop(context, controller.text),
               child: const Text('Enviar'),
@@ -458,8 +529,9 @@ class _CorrectionsTab extends ConsumerWidget {
       controller.dispose();
       if (answer == null || !context.mounted) return;
       try {
-        await ref.read(attendanceAdminServiceProvider).resolveCorrection(
-              actor, r, approved: approved, respuesta: answer);
+        await ref
+            .read(attendanceAdminServiceProvider)
+            .resolveCorrection(actor, r, approved: approved, respuesta: answer);
       } catch (e) {
         if (context.mounted) _toast(context, e);
       }
@@ -474,21 +546,27 @@ class _CorrectionsTab extends ConsumerWidget {
               children: [
                 for (final r in items)
                   ListTile(
-                    title: Text('${names[r.uid] ?? r.uid} · ${r.fecha} · ${r.tipo}'),
+                    title: Text(
+                      '${names[r.uid] ?? r.uid} · ${r.fecha} · ${r.tipo}',
+                    ),
                     subtitle: Text(r.motivo),
-                    trailing: r.estado == CorrectionStatus.pendiente && canResolve
-                        ? Row(mainAxisSize: MainAxisSize.min, children: [
-                            IconButton(
-                              tooltip: 'Aprobar',
-                              icon: const Icon(Icons.check),
-                              onPressed: () => resolve(r, true),
-                            ),
-                            IconButton(
-                              tooltip: 'Rechazar',
-                              icon: const Icon(Icons.close),
-                              onPressed: () => resolve(r, false),
-                            ),
-                          ])
+                    trailing:
+                        r.estado == CorrectionStatus.pendiente && canResolve
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Aprobar',
+                                icon: const Icon(Icons.check),
+                                onPressed: () => resolve(r, true),
+                              ),
+                              IconButton(
+                                tooltip: 'Rechazar',
+                                icon: const Icon(Icons.close),
+                                onPressed: () => resolve(r, false),
+                              ),
+                            ],
+                          )
                         : Chip(label: Text(r.estado.label)),
                   ),
               ],

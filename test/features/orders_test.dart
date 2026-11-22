@@ -205,4 +205,96 @@ void main() {
       await orders.items.close();
     },
   );
+
+  test('el motivo de cancelación es obligatorio y se recorta', () async {
+    final repository = FakeOrderRepository();
+    final service = OrderService(repository);
+    for (final reason in ['', '  a ', 'x' * 201]) {
+      expect(() => service.cancel('o', reason, 'w1'), throwsException);
+    }
+    expect(repository.cancelReason, isNull);
+    await service.cancel('o', '  Cliente se fue  ', 'w1');
+    expect(repository.cancelReason, 'Cliente se fue');
+    expect(repository.cancelActor, 'w1');
+    await repository.orders.close();
+    await repository.items.close();
+  });
+
+  testWidgets(
+    'cancelar un pedido pide el motivo y lo envía con quien cancela',
+    (tester) async {
+      final orders = FakeOrderRepository();
+      orders.orders.add([sampleOrder()]);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            orderRepositoryProvider.overrideWithValue(orders),
+            sessionProvider.overrideWith(
+              (ref) => Stream.value(
+                Authenticated(buildUser(uid: 'w1', role: UserRole.mesero)),
+              ),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: OrderDetail(orderId: 'o')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancelar pedido'));
+      await tester.pumpAndSettle();
+      // Sin motivo no avanza.
+      await tester.tap(find.text('Cancelar pedido').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Indica el motivo (3 a 200 caracteres).'),
+        findsOneWidget,
+      );
+      expect(orders.cancelReason, isNull);
+      await tester.enterText(find.byType(TextFormField), 'Error de mesa');
+      await tester.tap(find.text('Cancelar pedido').last);
+      await tester.pumpAndSettle();
+      expect(orders.cancelReason, 'Error de mesa');
+      expect(orders.cancelActor, 'w1');
+      await tester.pumpWidget(const SizedBox());
+      await orders.orders.close();
+      await orders.items.close();
+    },
+  );
+
+  testWidgets('un pedido cancelado muestra su motivo', (tester) async {
+    final orders = FakeOrderRepository();
+    orders.orders.add([
+      RestaurantOrder(
+        id: 'o',
+        tableId: '1',
+        waiterId: 'w1',
+        waiterName: 'Ana',
+        status: OrderStatus.cancelado,
+        revision: 2,
+        itemCount: 0,
+        cancelReason: 'Cliente se fue',
+      ),
+    ]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          orderRepositoryProvider.overrideWithValue(orders),
+          sessionProvider.overrideWith(
+            (ref) => Stream.value(
+              Authenticated(buildUser(uid: 'w1', role: UserRole.mesero)),
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: OrderDetail(orderId: 'o')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Motivo de cancelación: Cliente se fue'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await orders.orders.close();
+    await orders.items.close();
+  });
 }

@@ -24,7 +24,7 @@ enum DocumentType {
   }
 
   String? validate(String? number) => switch (this) {
-        dni => Validators.dni(number),
-        ce => Validators.carnetExtranjeria(number),
-      };
+    dni => Validators.dni(number),
+    ce => Validators.carnetExtranjeria(number),
+  };
 }

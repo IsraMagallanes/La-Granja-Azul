@@ -13,8 +13,10 @@ class StaffValidator {
     }
 
     check('nombres', Validators.persona(draft.nombres, field: 'Los nombres'));
-    check('apellidos',
-        Validators.persona(draft.apellidos, field: 'Los apellidos'));
+    check(
+      'apellidos',
+      Validators.persona(draft.apellidos, field: 'Los apellidos'),
+    );
     check('documento', draft.documentType.validate(draft.documento));
     check('email', Validators.email(draft.email));
     check('celular', Validators.celular(draft.celular));

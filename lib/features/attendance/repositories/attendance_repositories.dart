@@ -84,12 +84,27 @@ abstract interface class TerminalRepository {
   Stream<AttendanceTerminal?> watchTerminal(String uid);
   Stream<List<AttendanceTerminal>> watchAll();
 
-  Future<void> authorize(AppUser actor, {required String nombre, required String uid});
-  Future<void> setActive(AppUser actor, AttendanceTerminal terminal,
-      {required bool active});
+  Future<void> authorize(
+    AppUser actor, {
+    required String nombre,
+    required String uid,
+  });
+  Future<void> setActive(
+    AppUser actor,
+    AttendanceTerminal terminal, {
+    required bool active,
+  });
 
   /// Borra el secreto del dispositivo: la terminal podrá enlazarse de nuevo
   /// (p. ej. tablet reemplazada o credenciales comprometidas).
   Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal);
-}
 
+  /// UID de las terminales con una solicitud de eliminación definitiva
+  /// pendiente (la procesa el script local `tools/delete_terminal.js`).
+  Stream<Set<String>> watchDeletionRequests();
+
+  /// Registra, con auditoría, la solicitud de eliminar definitivamente una
+  /// terminal ya inhabilitada. No elimina nada: la cuenta de acceso solo se
+  /// puede borrar con el Admin SDK.
+  Future<void> requestDeletion(AppUser actor, AttendanceTerminal terminal);
+}

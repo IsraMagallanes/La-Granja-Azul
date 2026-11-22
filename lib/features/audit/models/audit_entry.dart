@@ -43,8 +43,15 @@ class AuditEntry extends Equatable {
   }
 
   @override
-  List<Object?> get props =>
-      [id, accion, actorUid, actorNombre, objetivo, creadoEn, campos];
+  List<Object?> get props => [
+    id,
+    accion,
+    actorUid,
+    actorNombre,
+    objetivo,
+    creadoEn,
+    campos,
+  ];
 }
 
 /// Acciones auditadas (valor guardado en `accion`).
@@ -58,6 +65,8 @@ abstract final class AuditAction {
   static const autorizarTerminal = 'autorizar_terminal';
   static const revocarTerminal = 'revocar_terminal';
   static const restablecerTerminal = 'restablecer_terminal';
+  static const solicitarEliminacionTerminal = 'solicitar_eliminacion_terminal';
+  static const eliminarTerminal = 'eliminar_terminal';
   static const guardarHorario = 'guardar_horario';
   static const regularizarAsistencia = 'regularizar_asistencia';
   static const resolverCorreccion = 'resolver_correccion';

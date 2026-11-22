@@ -11,15 +11,20 @@ import 'terminal_providers.dart';
 
 /// Se sobrescriben en `main.dart` con las implementaciones de Firebase.
 final workerAttendanceRepositoryProvider = Provider<WorkerAttendanceRepository>(
-  (ref) => throw UnimplementedError('workerAttendanceRepositoryProvider sin override'),
+  (ref) => throw UnimplementedError(
+    'workerAttendanceRepositoryProvider sin override',
+  ),
 );
 
 final terminalScanRepositoryProvider = Provider<TerminalScanRepository>(
-  (ref) => throw UnimplementedError('terminalScanRepositoryProvider sin override'),
+  (ref) =>
+      throw UnimplementedError('terminalScanRepositoryProvider sin override'),
 );
 
 final attendanceAdminRepositoryProvider = Provider<AttendanceAdminRepository>(
-  (ref) => throw UnimplementedError('attendanceAdminRepositoryProvider sin override'),
+  (ref) => throw UnimplementedError(
+    'attendanceAdminRepositoryProvider sin override',
+  ),
 );
 
 final staffAccountCreatorProvider = Provider<StaffAccountCreator>(
@@ -63,6 +68,10 @@ final terminalsProvider = StreamProvider<List<AttendanceTerminal>>(
   (ref) => ref.watch(terminalRepositoryProvider).watchAll(),
 );
 
+final terminalDeletionRequestsProvider = StreamProvider<Set<String>>(
+  (ref) => ref.watch(terminalRepositoryProvider).watchDeletionRequests(),
+);
+
 final schedulesProvider = StreamProvider<List<Schedule>>(
   (ref) => ref.watch(attendanceAdminRepositoryProvider).watchSchedules(),
 );
@@ -77,9 +86,9 @@ final myHistoryProvider = StreamProvider.family<List<AttendanceRecord>, String>(
 
 final myCorrectionsProvider =
     StreamProvider.family<List<CorrectionRequest>, String>(
-  (ref, uid) =>
-      ref.watch(workerAttendanceRepositoryProvider).watchCorrections(uid),
-);
+      (ref, uid) =>
+          ref.watch(workerAttendanceRepositoryProvider).watchCorrections(uid),
+    );
 
 final tokenProvider = StreamProvider.family<QrToken?, String>(
   (ref, id) => ref.watch(workerAttendanceRepositoryProvider).watchToken(id),
@@ -100,8 +109,9 @@ class DateRange extends Equatable {
   List<Object?> get props => [from, to];
 }
 
-final recordsProvider = StreamProvider.family<List<AttendanceRecord>, DateRange>(
-  (ref, range) => ref
-      .watch(attendanceAdminRepositoryProvider)
-      .watchRange(range.from, range.to),
-);
+final recordsProvider =
+    StreamProvider.family<List<AttendanceRecord>, DateRange>(
+      (ref, range) => ref
+          .watch(attendanceAdminRepositoryProvider)
+          .watchRange(range.from, range.to),
+    );

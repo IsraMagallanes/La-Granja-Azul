@@ -19,7 +19,9 @@ abstract final class QrPayload {
   /// Id aleatorio de 128 bits generado con un RNG criptográfico.
   static String generateId([Random? random]) {
     final rng = random ?? Random.secure();
-    return List.generate(16, (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List.generate(
+      16,
+      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
   }
 }

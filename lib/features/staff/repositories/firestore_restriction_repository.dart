@@ -30,14 +30,18 @@ class FirestoreRestrictionRepository implements RestrictionRepository {
   Stream<List<RehireRestriction>> watchAll() => _firestore
       .collection(FirestorePaths.restricciones)
       .snapshots()
-      .map((s) => [
-            for (final d in s.docs) RehireRestriction.fromMap(d.id, d.data()),
-          ]);
+      .map(
+        (s) => [
+          for (final d in s.docs) RehireRestriction.fromMap(d.id, d.data()),
+        ],
+      );
 
   @override
   Future<String?> readJustification(String documento) async {
-    final snap =
-        await _doc(documento).collection('privado').doc('detalle').get();
+    final snap = await _doc(documento)
+        .collection('privado')
+        .doc('detalle')
+        .get();
     return snap.data()?['justificacion'] as String?;
   }
 
@@ -47,29 +51,27 @@ class FirestoreRestrictionRepository implements RestrictionRepository {
     required String justification,
     required DateTime reviewOn,
     required AppUser actor,
-  }) =>
-      _write(
-        documento,
-        actor,
-        AuditAction.crearRestriccion,
-        estado: 'activa',
-        justification: justification,
-        reviewOn: reviewOn,
-      );
+  }) => _write(
+    documento,
+    actor,
+    AuditAction.crearRestriccion,
+    estado: 'activa',
+    justification: justification,
+    reviewOn: reviewOn,
+  );
 
   @override
   Future<void> lift({
     required String documento,
     required String justification,
     required AppUser actor,
-  }) =>
-      _write(
-        documento,
-        actor,
-        AuditAction.levantarRestriccion,
-        estado: 'levantada',
-        justification: justification,
-      );
+  }) => _write(
+    documento,
+    actor,
+    AuditAction.levantarRestriccion,
+    estado: 'levantada',
+    justification: justification,
+  );
 
   Future<void> _write(
     String documento,
@@ -80,19 +82,20 @@ class FirestoreRestrictionRepository implements RestrictionRepository {
     DateTime? reviewOn,
   }) async {
     final batch = _firestore.batch();
-    final auditId = addAuditEntry(_firestore, batch,
-        actor: actor, accion: action, objetivo: documento);
-    batch.set(
-      _doc(documento),
-      {
-        'estado': estado,
-        'establecidaPor': actor.uid,
-        'actualizadoEn': FieldValue.serverTimestamp(),
-        if (reviewOn != null) 'revisarEn': StaffMember.formatDate(reviewOn),
-        'ultimaAuditoriaId': auditId,
-      },
-      SetOptions(merge: true),
+    final auditId = addAuditEntry(
+      _firestore,
+      batch,
+      actor: actor,
+      accion: action,
+      objetivo: documento,
     );
+    batch.set(_doc(documento), {
+      'estado': estado,
+      'establecidaPor': actor.uid,
+      'actualizadoEn': FieldValue.serverTimestamp(),
+      if (reviewOn != null) 'revisarEn': StaffMember.formatDate(reviewOn),
+      'ultimaAuditoriaId': auditId,
+    }, SetOptions(merge: true));
     batch.set(_doc(documento).collection('privado').doc('detalle'), {
       'justificacion': justification.trim(),
       'actorUid': actor.uid,

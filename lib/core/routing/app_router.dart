@@ -27,6 +27,7 @@ import '../../features/tables/screens/tables_screen.dart';
 import '../../features/users/screens/users_screen.dart';
 import '../../features/waiters/screens/waiter_screen.dart';
 import '../shell/staff_shell.dart';
+import '../../features/reservations/screens/reservations_screen.dart';
 import '../widgets/loading_view.dart';
 import 'app_routes.dart';
 import 'auth_redirect.dart';
@@ -42,6 +43,7 @@ const _staffScreens = <AppRoute, Widget>{
   AppRoute.tables: TablesScreen(),
   AppRoute.menuAdmin: MenuAdminScreen(),
   AppRoute.orders: OrdersScreen(),
+  AppRoute.reservations: ReservationsScreen(),
   AppRoute.reports: ReportsScreen(),
   AppRoute.attendanceAdmin: AttendanceAdminScreen(),
   AppRoute.myAttendance: MyAttendanceScreen(),

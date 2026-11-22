@@ -49,7 +49,8 @@ class StaffMember extends Equatable {
 
   /// Cuenta habilitada pero que el trabajador aún no activó (definir contraseña
   /// y verificar el correo). Que se haya enviado el correo NO la activa.
-  bool get pendienteActivacion => estado == StaffStatus.activo && activadoEn == null;
+  bool get pendienteActivacion =>
+      estado == StaffStatus.activo && activadoEn == null;
 
   String get nombreCompleto => '$nombres $apellidos';
   bool get activo => estado.canAccess;
@@ -63,9 +64,8 @@ class StaffMember extends Equatable {
       ? value
       : '${value.substring(0, 2)}${'•' * (value.length - 4)}${value.substring(value.length - 2)}';
 
-  static String maskPhone(String value) => value.length < 9
-      ? value
-      : '${'•' * 6}${value.substring(6)}';
+  static String maskPhone(String value) =>
+      value.length < 9 ? value : '${'•' * 6}${value.substring(6)}';
 
   /// Perfil creado antes de la Fase 3 (solo correo, nombre, rol y activo):
   /// se lista, pero sin documento ni celular hasta completarlo con
@@ -77,10 +77,14 @@ class StaffMember extends Equatable {
   static StaffMember? fromMap(String uid, Map<String, dynamic> data) {
     final role = UserRole.tryParse(data['rol']);
     if (role == null) return null;
-    final type = DocumentType.tryParse(data['tipoDocumento']) ?? DocumentType.dni;
-    final doc = data['numeroDocumento'] is String ? data['numeroDocumento'] as String : '';
+    final type =
+        DocumentType.tryParse(data['tipoDocumento']) ?? DocumentType.dni;
+    final doc = data['numeroDocumento'] is String
+        ? data['numeroDocumento'] as String
+        : '';
     final legacyName = ((data['nombre'] as String?) ?? '').trim();
-    final estado = StaffStatus.tryParse(data['estado']) ??
+    final estado =
+        StaffStatus.tryParse(data['estado']) ??
         (data['activo'] == true ? StaffStatus.activo : StaffStatus.baja);
     return StaffMember(
       uid: uid,
@@ -93,7 +97,8 @@ class StaffMember extends Equatable {
       celularAlterno: data['celularAlterno'] as String?,
       role: role,
       estado: estado,
-      fechaIngreso: _date(data['fechaIngreso']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      fechaIngreso:
+          _date(data['fechaIngreso']) ?? DateTime.fromMillisecondsSinceEpoch(0),
       horarioId: data['horarioId'] as String?,
       puedeRegularizar: data['puedeRegularizar'] == true,
       bajaTipo: LeaveReason.tryParse(data['bajaTipo']),
@@ -102,7 +107,8 @@ class StaffMember extends Equatable {
   }
 
   /// Fecha de calendario guardada como texto `yyyy-MM-dd` (sin zona horaria).
-  static DateTime? _date(Object? raw) => raw is String ? DateTime.tryParse(raw) : null;
+  static DateTime? _date(Object? raw) =>
+      raw is String ? DateTime.tryParse(raw) : null;
 
   static String formatDate(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-'
@@ -111,20 +117,20 @@ class StaffMember extends Equatable {
 
   @override
   List<Object?> get props => [
-        uid,
-        nombres,
-        apellidos,
-        documentType,
-        documento,
-        email,
-        celular,
-        celularAlterno,
-        role,
-        estado,
-        fechaIngreso,
-        horarioId,
-        puedeRegularizar,
-        bajaTipo,
-        activadoEn,
-      ];
+    uid,
+    nombres,
+    apellidos,
+    documentType,
+    documento,
+    email,
+    celular,
+    celularAlterno,
+    role,
+    estado,
+    fechaIngreso,
+    horarioId,
+    puedeRegularizar,
+    bajaTipo,
+    activadoEn,
+  ];
 }

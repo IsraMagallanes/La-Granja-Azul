@@ -7,8 +7,11 @@ import '../models/status_change.dart';
 /// Resultado de un alta: el correo de contraseña se envía solo si la ficha
 /// quedó guardada; si el envío falla se informa para reenviarlo.
 class CreatedStaff {
-  const CreatedStaff(this.uid,
-      {this.resetEmailSent = true, this.verificationSent = true});
+  const CreatedStaff(
+    this.uid, {
+    this.resetEmailSent = true,
+    this.verificationSent = true,
+  });
 
   final String uid;
 
@@ -82,7 +85,10 @@ abstract interface class RestrictionRepository {
 
 /// Resultado del envío de los correos de activación.
 class ActivationMail {
-  const ActivationMail({this.passwordResetSent = true, this.verificationSent = true});
+  const ActivationMail({
+    this.passwordResetSent = true,
+    this.verificationSent = true,
+  });
 
   final bool passwordResetSent;
   final bool verificationSent;

@@ -75,21 +75,22 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
+            onPressed: () =>
+                ref.read(authControllerProvider.notifier).signOut(),
           ),
         ],
       ),
       body: switch (binding) {
         AsyncData(value: DeviceBound()) => _scanner(terminal.uid),
         AsyncData(value: DeviceNotBound(:final message)) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(message, textAlign: TextAlign.center),
-            ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(message, textAlign: TextAlign.center),
           ),
+        ),
         AsyncError() => const Center(
-            child: Text('No se pudo enlazar la terminal. Revisa la conexión.'),
-          ),
+          child: Text('No se pudo enlazar la terminal. Revisa la conexión.'),
+        ),
         _ => const Center(child: CircularProgressIndicator()),
       },
     );
@@ -97,23 +98,20 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
   Widget _scanner(String terminalUid) {
     return Stack(
-        fit: StackFit.expand,
-        children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: (c) => _onDetect(c, terminalUid),
-            errorBuilder: (context, error) => Center(
-              child: Text('No se pudo usar la cámara: ${error.errorCode.name}'),
-            ),
+      fit: StackFit.expand,
+      children: [
+        MobileScanner(
+          controller: _controller,
+          onDetect: (c) => _onDetect(c, terminalUid),
+          errorBuilder: (context, error) => Center(
+            child: Text('No se pudo usar la cámara: ${error.errorCode.name}'),
           ),
-          if (_result == null)
-            const Align(
-              alignment: Alignment.bottomCenter,
-              child: _Hint(),
-            )
-          else
-            _ResultPanel(result: _result!),
-        ],
+        ),
+        if (_result == null)
+          const Align(alignment: Alignment.bottomCenter, child: _Hint())
+        else
+          _ResultPanel(result: _result!),
+      ],
     );
   }
 }
@@ -123,15 +121,15 @@ class _Hint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        color: Colors.black54,
-        padding: const EdgeInsets.all(16),
-        child: const Text(
-          'Muestra tu QR de entrada o salida frente a la cámara.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-      );
+    width: double.infinity,
+    color: Colors.black54,
+    padding: const EdgeInsets.all(16),
+    child: const Text(
+      'Muestra tu QR de entrada o salida frente a la cámara.',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: Colors.white, fontSize: 18),
+    ),
+  );
 }
 
 class _ResultPanel extends StatelessWidget {
@@ -157,22 +155,25 @@ class _ResultPanel extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(ok ? Icons.check_circle : Icons.error,
-                  size: 96, color: Colors.white),
+              Icon(
+                ok ? Icons.check_circle : Icons.error,
+                size: 96,
+                color: Colors.white,
+              ),
               const SizedBox(height: 16),
-              Text(title,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(color: Colors.white)),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineMedium
+                    ?.copyWith(color: Colors.white),
+              ),
               const SizedBox(height: 8),
-              Text(detail,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: Colors.white)),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(color: Colors.white),
+              ),
             ],
           ),
         ),

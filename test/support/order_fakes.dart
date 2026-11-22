@@ -30,6 +30,13 @@ class FakeOrderRepository implements OrderRepository {
   final items = BehaviorSubject<List<OrderItem>>.seeded([]);
   String? queriedWaiter;
   String? openedTable;
+  String? cancelReason;
+  String? cancelActor;
+  OrderStatus? changedTo;
+  KitchenStatus? kitchenTo;
+  String? kitchenOrder;
+  String? kitchenActor;
+  String? kitchenForceReason;
   int? savedQuantity;
   String? savedNotes;
   @override
@@ -70,5 +77,26 @@ class FakeOrderRepository implements OrderRepository {
   @override
   Future<void> removeItem(String orderId, String dishId) async {}
   @override
-  Future<void> changeStatus(String id, OrderStatus status) async {}
+  Future<void> changeStatus(String id, OrderStatus status) async {
+    changedTo = status;
+  }
+
+  @override
+  Future<void> advanceKitchen(
+    String orderId,
+    KitchenStatus to,
+    String actorUid, {
+    String? forceReason,
+  }) async {
+    kitchenForceReason = forceReason;
+    kitchenOrder = orderId;
+    kitchenTo = to;
+    kitchenActor = actorUid;
+  }
+
+  @override
+  Future<void> cancelOrder(String id, String reason, String actorUid) async {
+    cancelReason = reason;
+    cancelActor = actorUid;
+  }
 }

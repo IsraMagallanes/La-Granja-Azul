@@ -23,11 +23,11 @@ class FirestoreStaffRepository implements StaffRepository {
       _firestore.collection(name);
 
   @override
-  Stream<List<StaffMember>> watchAll() =>
-      _col(FirestorePaths.usuarios).snapshots().map((s) => [
-            for (final d in s.docs)
-              ?StaffMember.fromMap(d.id, d.data()),
-          ]);
+  Stream<List<StaffMember>> watchAll() => _col(FirestorePaths.usuarios)
+      .snapshots()
+      .map(
+        (s) => [for (final d in s.docs) ?StaffMember.fromMap(d.id, d.data())],
+      );
 
   @override
   Future<bool> documentExists(String documento) async =>
@@ -38,7 +38,10 @@ class FirestoreStaffRepository implements StaffRepository {
       (await _col(FirestorePaths.correos).doc(email).get()).exists;
 
   @override
-  Future<CreatedStaff> create(StaffDraft draft, {required AppUser actor}) async {
+  Future<CreatedStaff> create(
+    StaffDraft draft, {
+    required AppUser actor,
+  }) async {
     final account = await _accounts.createAccount(draft.emailNormalizado);
     final uid = account.uid;
     final batch = _firestore.batch();
@@ -68,10 +71,14 @@ class FirestoreStaffRepository implements StaffRepository {
       'actualizadoEn': FieldValue.serverTimestamp(),
       'ultimaAuditoriaId': auditId,
     });
-    batch.set(_col(FirestorePaths.documentos).doc(draft.documentoNormalizado),
-        {'uid': uid, 'creadoEn': FieldValue.serverTimestamp()});
-    batch.set(_col(FirestorePaths.correos).doc(draft.emailNormalizado),
-        {'uid': uid, 'creadoEn': FieldValue.serverTimestamp()});
+    batch.set(_col(FirestorePaths.documentos).doc(draft.documentoNormalizado), {
+      'uid': uid,
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
+    batch.set(_col(FirestorePaths.correos).doc(draft.emailNormalizado), {
+      'uid': uid,
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
     try {
       await batch.commit();
     } catch (_) {
@@ -80,9 +87,11 @@ class FirestoreStaffRepository implements StaffRepository {
       rethrow;
     }
     final mail = await account.commit();
-    return CreatedStaff(uid,
-        resetEmailSent: mail.passwordResetSent,
-        verificationSent: mail.verificationSent);
+    return CreatedStaff(
+      uid,
+      resetEmailSent: mail.passwordResetSent,
+      verificationSent: mail.verificationSent,
+    );
   }
 
   @override
@@ -111,7 +120,12 @@ class FirestoreStaffRepository implements StaffRepository {
         'fechaIngreso',
     ];
     return _commitUserChange(
-        current.uid, actor, AuditAction.editarTrabajador, changed, changes);
+      current.uid,
+      actor,
+      AuditAction.editarTrabajador,
+      changed,
+      changes,
+    );
   }
 
   @override
@@ -154,18 +168,26 @@ class FirestoreStaffRepository implements StaffRepository {
     StaffMember target, {
     required bool allowed,
     required AppUser actor,
-  }) =>
-      _commitUserChange(target.uid, actor, AuditAction.autorizarRegularizar,
-          ['puedeRegularizar'], {'puedeRegularizar': allowed});
+  }) => _commitUserChange(
+    target.uid,
+    actor,
+    AuditAction.autorizarRegularizar,
+    ['puedeRegularizar'],
+    {'puedeRegularizar': allowed},
+  );
 
   @override
   Future<void> assignSchedule(
     StaffMember target,
     String? scheduleId, {
     required AppUser actor,
-  }) =>
-      _commitUserChange(target.uid, actor, AuditAction.editarTrabajador,
-          ['horarioId'], {'horarioId': scheduleId ?? FieldValue.delete()});
+  }) => _commitUserChange(
+    target.uid,
+    actor,
+    AuditAction.editarTrabajador,
+    ['horarioId'],
+    {'horarioId': scheduleId ?? FieldValue.delete()},
+  );
 
   Future<void> _commitUserChange(
     String uid,
@@ -175,8 +197,14 @@ class FirestoreStaffRepository implements StaffRepository {
     Map<String, Object?> changes,
   ) async {
     final batch = _firestore.batch();
-    final auditId = addAuditEntry(_firestore, batch,
-        actor: actor, accion: action, objetivo: uid, campos: changedFields);
+    final auditId = addAuditEntry(
+      _firestore,
+      batch,
+      actor: actor,
+      accion: action,
+      objetivo: uid,
+      campos: changedFields,
+    );
     batch.update(_col(FirestorePaths.usuarios).doc(uid), {
       ...changes,
       'actualizadoEn': FieldValue.serverTimestamp(),

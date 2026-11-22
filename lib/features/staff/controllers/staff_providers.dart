@@ -54,8 +54,9 @@ class StaffQueryNotifier extends Notifier<StaffListQuery> {
       state = change(state);
 }
 
-final staffQueryProvider =
-    NotifierProvider<StaffQueryNotifier, StaffListQuery>(StaffQueryNotifier.new);
+final staffQueryProvider = NotifierProvider<StaffQueryNotifier, StaffListQuery>(
+  StaffQueryNotifier.new,
+);
 
 final urlOpenerProvider = Provider<UrlOpener>((ref) => UrlLauncherOpener());
 

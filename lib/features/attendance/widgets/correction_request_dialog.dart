@@ -23,7 +23,8 @@ class CorrectionRequestDialog extends StatefulWidget {
       );
 
   @override
-  State<CorrectionRequestDialog> createState() => _CorrectionRequestDialogState();
+  State<CorrectionRequestDialog> createState() =>
+      _CorrectionRequestDialogState();
 }
 
 class _CorrectionRequestDialogState extends State<CorrectionRequestDialog> {
@@ -57,7 +58,9 @@ class _CorrectionRequestDialogState extends State<CorrectionRequestDialog> {
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: _date,
-                    firstDate: DateTime.now().subtract(const Duration(days: 60)),
+                    firstDate: DateTime.now().subtract(
+                      const Duration(days: 60),
+                    ),
                     lastDate: DateTime.now(),
                   );
                   if (picked != null) setState(() => _date = picked);
@@ -69,7 +72,10 @@ class _CorrectionRequestDialogState extends State<CorrectionRequestDialog> {
                 items: const [
                   DropdownMenuItem(value: 'entrada', child: Text('Entrada')),
                   DropdownMenuItem(value: 'salida', child: Text('Salida')),
-                  DropdownMenuItem(value: 'ambas', child: Text('Entrada y salida')),
+                  DropdownMenuItem(
+                    value: 'ambas',
+                    child: Text('Entrada y salida'),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _tipo = v!),
               ),
@@ -85,7 +91,10 @@ class _CorrectionRequestDialogState extends State<CorrectionRequestDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(
           onPressed: () {
             if (!_formKey.currentState!.validate()) return;

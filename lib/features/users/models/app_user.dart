@@ -54,20 +54,29 @@ class AppUser extends Equatable {
   }
 
   AppUser copyWithActivated(DateTime when) => AppUser(
-        uid: uid,
-        email: email,
-        nombre: nombre,
-        role: role,
-        activo: activo,
-        nombres: nombres,
-        horarioId: horarioId,
-        puedeRegularizar: puedeRegularizar,
-        activadoEn: when,
-      );
+    uid: uid,
+    email: email,
+    nombre: nombre,
+    role: role,
+    activo: activo,
+    nombres: nombres,
+    horarioId: horarioId,
+    puedeRegularizar: puedeRegularizar,
+    activadoEn: when,
+  );
 
   @override
-  List<Object?> get props =>
-      [uid, email, nombre, role, activo, nombres, horarioId, puedeRegularizar, activadoEn];
+  List<Object?> get props => [
+    uid,
+    email,
+    nombre,
+    role,
+    activo,
+    nombres,
+    horarioId,
+    puedeRegularizar,
+    activadoEn,
+  ];
 }
 
 /// Convierte `DateTime` o `Timestamp` de Firestore (duck-typing: los modelos no

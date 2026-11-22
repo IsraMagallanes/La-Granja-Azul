@@ -31,8 +31,9 @@ class Schedule extends Equatable {
 
   bool get esNocturno => finMin <= inicioMin;
 
-  Duration get duracion =>
-      Duration(minutes: esNocturno ? 1440 - inicioMin + finMin : finMin - inicioMin);
+  Duration get duracion => Duration(
+    minutes: esNocturno ? 1440 - inicioMin + finMin : finMin - inicioMin,
+  );
 
   String get horaInicio => formatMinutes(inicioMin);
   String get horaFin => formatMinutes(finMin);
@@ -44,19 +45,27 @@ class Schedule extends Equatable {
   /// Convierte `HH:mm` a minutos; `null` si el formato es inválido.
   static int? parseMinutes(String? value) {
     if (value == null || !_time.hasMatch(value)) return null;
-    return int.parse(value.substring(0, 2)) * 60 + int.parse(value.substring(3));
+    return int.parse(value.substring(0, 2)) * 60 +
+        int.parse(value.substring(3));
   }
 
   /// Instante de inicio del turno que arranca el día de Lima [dayStart].
   DateTime startOn(DateTime dayStart) {
     final w = LimaTime.wall(dayStart);
-    return LimaTime.instant(w.year, w.month, w.day, inicioMin ~/ 60, inicioMin % 60);
+    return LimaTime.instant(
+      w.year,
+      w.month,
+      w.day,
+      inicioMin ~/ 60,
+      inicioMin % 60,
+    );
   }
 
   DateTime endOn(DateTime dayStart) => startOn(dayStart).add(duracion);
 
   /// El turno aplica si arranca en un día de la semana configurado.
-  bool appliesOn(DateTime dayStart) => dias.contains(LimaTime.weekday(dayStart));
+  bool appliesOn(DateTime dayStart) =>
+      dias.contains(LimaTime.weekday(dayStart));
 
   /// Minutos de tardanza de [entrada] (0 si llegó dentro de la tolerancia).
   /// Toma como referencia el inicio de turno más cercano (ayer, hoy o mañana),
@@ -86,19 +95,21 @@ class Schedule extends Equatable {
       inicioMin: start,
       finMin: end,
       toleranciaMin: (data['toleranciaMin'] as num?)?.toInt() ?? 0,
-      dias: [for (final d in (data['dias'] as List?) ?? const []) (d as num).toInt()],
+      dias: [
+        for (final d in (data['dias'] as List?) ?? const []) (d as num).toInt(),
+      ],
       activo: data['activo'] != false,
     );
   }
 
   Map<String, Object?> toMap() => {
-        'nombre': nombre,
-        'horaInicio': horaInicio,
-        'horaFin': horaFin,
-        'toleranciaMin': toleranciaMin,
-        'dias': dias,
-        'activo': activo,
-      };
+    'nombre': nombre,
+    'horaInicio': horaInicio,
+    'horaFin': horaFin,
+    'toleranciaMin': toleranciaMin,
+    'dias': dias,
+    'activo': activo,
+  };
 
   /// Validación de los datos del formulario; devuelve el primer error.
   static String? validate({
@@ -113,7 +124,8 @@ class Schedule extends Equatable {
     }
     final start = parseMinutes(horaInicio);
     final end = parseMinutes(horaFin);
-    if (start == null || end == null) return 'Las horas deben tener formato HH:mm.';
+    if (start == null || end == null)
+      return 'Las horas deben tener formato HH:mm.';
     if (start == end) return 'La hora de inicio y fin no pueden ser iguales.';
     if (toleranciaMin < 0 || toleranciaMin > 120) {
       return 'La tolerancia debe estar entre 0 y 120 minutos.';
@@ -123,6 +135,13 @@ class Schedule extends Equatable {
   }
 
   @override
-  List<Object?> get props =>
-      [id, nombre, inicioMin, finMin, toleranciaMin, dias, activo];
+  List<Object?> get props => [
+    id,
+    nombre,
+    inicioMin,
+    finMin,
+    toleranciaMin,
+    dias,
+    activo,
+  ];
 }

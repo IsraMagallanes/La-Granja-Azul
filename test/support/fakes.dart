@@ -10,14 +10,13 @@ AppUser buildUser({
   String uid = 'u1',
   UserRole role = UserRole.admin,
   bool activo = true,
-}) =>
-    AppUser(
-      uid: uid,
-      email: '$uid@granja.pe',
-      nombre: 'Usuario $uid',
-      role: role,
-      activo: activo,
-    );
+}) => AppUser(
+  uid: uid,
+  email: '$uid@granja.pe',
+  nombre: 'Usuario $uid',
+  role: role,
+  activo: activo,
+);
 
 class FakeUserRepository implements UserRepository {
   final Map<String, AppUser> users = {};
@@ -34,11 +33,11 @@ class FakeUserRepository implements UserRepository {
 /// Autenticación en memoria: contraseña válida `secreta1`.
 class FakeAuthRepository implements AuthRepository {
   FakeAuthRepository({String? initialUid, bool verified = true})
-      : _state = BehaviorSubject.seeded(
-          initialUid == null
-              ? null
-              : AuthAccount(uid: initialUid, emailVerified: verified),
-        );
+    : _state = BehaviorSubject.seeded(
+        initialUid == null
+            ? null
+            : AuthAccount(uid: initialUid, emailVerified: verified),
+      );
 
   /// UIDs cuyo correo NO está verificado (por defecto todos lo están).
   final unverifiedUids = <String>{};
@@ -60,7 +59,9 @@ class FakeAuthRepository implements AuthRepository {
     if (uid == null || password != 'secreta1') {
       throw const AppFailure('Correo o contraseña incorrectos.');
     }
-    _state.add(AuthAccount(uid: uid, emailVerified: !unverifiedUids.contains(uid)));
+    _state.add(
+      AuthAccount(uid: uid, emailVerified: !unverifiedUids.contains(uid)),
+    );
   }
 
   @override

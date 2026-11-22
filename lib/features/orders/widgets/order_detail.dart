@@ -7,7 +7,9 @@ import '../../auth/models/session_state.dart';
 import '../controllers/order_providers.dart';
 import '../models/order_item.dart';
 import '../models/restaurant_order.dart';
+import '../../kitchen/services/kitchen_policy.dart';
 import '../services/order_policy.dart';
+import '../services/order_service.dart' show OrderValidation;
 import 'operation_button.dart';
 import 'order_async_view.dart';
 import 'item_editor.dart';
@@ -68,6 +70,15 @@ class OrderDetail extends ConsumerWidget {
                 ),
                 if (!order.editable)
                   const Text('Este pedido ya no admite cambios.'),
+                if (order.kitchen != null)
+                  Text(
+                    'Cocina: ${order.kitchen!.label}'
+                    '${order.readyAt != null && order.kitchen == KitchenStatus.listo ? ' (desde las ${LimaTime.formatTime(order.readyAt!)})' : ''}',
+                  ),
+                if (order.cancelReason != null)
+                  SelectableText(
+                    'Motivo de cancelación: ${order.cancelReason}',
+                  ),
                 OrderAsyncView(
                   value: ref.watch(orderItemsProvider(orderId)),
                   onRetry: () => ref.invalidate(orderItemsProvider(orderId)),
@@ -128,6 +139,22 @@ class OrderDetail extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (session is Authenticated &&
+                    KitchenPolicy.canAdvance(
+                      session.user,
+                      order,
+                      KitchenStatus.entregado,
+                    ))
+                  OperationButton(
+                    label: 'Marcar entregado',
+                    onPressed: () => ref
+                        .read(orderServiceProvider)
+                        .advanceKitchen(
+                          order,
+                          KitchenStatus.entregado,
+                          session.user.uid,
+                        ),
+                  ),
                 if (editable)
                   Wrap(
                     children: [
@@ -157,13 +184,14 @@ class OrderDetail extends ConsumerWidget {
                       OperationButton(
                         label: 'Cancelar pedido',
                         onPressed: () async {
-                          if (await _confirm(
-                            context,
-                            '¿Cancelar el pedido y liberar la mesa?',
-                          )) {
+                          final reason = await showDialog<String>(
+                            context: context,
+                            builder: (_) => const _CancelReasonDialog(),
+                          );
+                          if (reason != null) {
                             await ref
                                 .read(orderServiceProvider)
-                                .status(orderId, OrderStatus.cancelado);
+                                .cancel(orderId, reason, session.user.uid);
                           }
                         },
                       ),
@@ -179,6 +207,55 @@ class OrderDetail extends ConsumerWidget {
       TextButton(
         onPressed: () => Navigator.pop(context),
         child: const Text('Cerrar'),
+      ),
+    ],
+  );
+}
+
+/// Pide el motivo de la cancelación; devuelve el texto o null si se vuelve.
+class _CancelReasonDialog extends StatefulWidget {
+  const _CancelReasonDialog();
+  @override
+  State<_CancelReasonDialog> createState() => _CancelReasonDialogState();
+}
+
+class _CancelReasonDialogState extends State<_CancelReasonDialog> {
+  final _form = GlobalKey<FormState>();
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('¿Cancelar el pedido y liberar la mesa?'),
+    content: Form(
+      key: _form,
+      child: TextFormField(
+        controller: _reason,
+        autofocus: true,
+        maxLength: 200,
+        decoration: const InputDecoration(
+          labelText: 'Motivo de la cancelación',
+        ),
+        validator: OrderValidation.cancelReason,
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Volver'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_form.currentState!.validate()) {
+            Navigator.pop(context, _reason.text.trim());
+          }
+        },
+        child: const Text('Cancelar pedido'),
       ),
     ],
   );

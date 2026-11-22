@@ -85,7 +85,9 @@ class _Pending implements PendingAccount {
     }
     await _signOut();
     return ActivationMail(
-        passwordResetSent: resetSent, verificationSent: verificationSent);
+      passwordResetSent: resetSent,
+      verificationSent: verificationSent,
+    );
   }
 
   static const _mailTimeout = Duration(seconds: 20);

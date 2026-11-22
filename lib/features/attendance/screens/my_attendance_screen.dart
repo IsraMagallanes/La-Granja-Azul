@@ -37,7 +37,11 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
     super.dispose();
   }
 
-  Future<void> _issue(AppUser user, PunchType type, AttendanceState? state) async {
+  Future<void> _issue(
+    AppUser user,
+    PunchType type,
+    AttendanceState? state,
+  ) async {
     setState(() {
       _busy = true;
       _notice = null;
@@ -82,7 +86,8 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
     final user = session.user;
     final state = ref.watch(myStateProvider(user.uid)).value;
     final history = ref.watch(myHistoryProvider(user.uid));
-    final corrections = ref.watch(myCorrectionsProvider(user.uid)).value ?? const [];
+    final corrections =
+        ref.watch(myCorrectionsProvider(user.uid)).value ?? const [];
     final schedules = ref.watch(schedulesProvider).value ?? const [];
     final schedule = schedules.where((s) => s.id == user.horarioId).firstOrNull;
     final open = state?.abierta ?? false;
@@ -105,29 +110,49 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(open ? 'Jornada en curso' : 'Sin jornada abierta',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  open ? 'Jornada en curso' : 'Sin jornada abierta',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 if (schedule != null)
-                  Text('Turno: ${schedule.nombre} · ${schedule.horaInicio}–${schedule.horaFin}'
-                      '${schedule.esNocturno ? ' (nocturno)' : ''}'),
+                  Text(
+                    'Turno: ${schedule.nombre} · ${schedule.horaInicio}–${schedule.horaFin}'
+                    '${schedule.esNocturno ? ' (nocturno)' : ''}',
+                  ),
                 const SizedBox(height: 4),
                 const Text(
                   'Genera el QR y muéstralo en la terminal del restaurante. '
                   'Dura 45 segundos y se usa una sola vez.',
                 ),
+                if (!session.onShift)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Registra tu entrada para acceder a tus módulos de trabajo.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 const SizedBox(height: 12),
-                Wrap(spacing: 12, runSpacing: 8, children: [
-                  FilledButton.icon(
-                    onPressed: _busy || open ? null : () => _issue(user, PunchType.entrada, state),
-                    icon: const Icon(Icons.login),
-                    label: const Text('Generar QR de entrada'),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: _busy || !open ? null : () => _issue(user, PunchType.salida, state),
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Generar QR de salida'),
-                  ),
-                ]),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _busy || open
+                          ? null
+                          : () => _issue(user, PunchType.entrada, state),
+                      icon: const Icon(Icons.login),
+                      label: const Text('Generar QR de entrada'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: _busy || !open
+                          ? null
+                          : () => _issue(user, PunchType.salida, state),
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Generar QR de salida'),
+                    ),
+                  ],
+                ),
                 if (_notice != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -143,8 +168,10 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  Text('QR de ${_qr!.token.tipo.label.toLowerCase()}',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'QR de ${_qr!.token.tipo.label.toLowerCase()}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 12),
                   Container(
                     color: Colors.white,
@@ -152,8 +179,10 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
                     child: QrImageView(data: _qr!.payload, size: 240),
                   ),
                   const SizedBox(height: 12),
-                  Text('Vence en $_remaining s',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Vence en $_remaining s',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ],
               ),
             ),
@@ -162,8 +191,10 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
         Row(
           children: [
             Expanded(
-              child: Text('Mi historial',
-                  style: Theme.of(context).textTheme.titleMedium),
+              child: Text(
+                'Mi historial',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
             TextButton.icon(
               onPressed: () => _requestCorrection(user),
@@ -177,16 +208,25 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
           error: (e, _) => Text(ErrorMapper.map(e).message),
           data: (records) => records.isEmpty
               ? const Text('Aún no tienes marcaciones.')
-              : Column(children: [for (final r in records) _RecordTile(record: r)]),
+              : Column(
+                  children: [for (final r in records) _RecordTile(record: r)],
+                ),
         ),
         if (corrections.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('Mis solicitudes', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Mis solicitudes',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           for (final c in corrections)
             ListTile(
               dense: true,
               title: Text('${c.fecha} · ${c.tipo}'),
-              subtitle: Text(c.respuesta == null ? c.motivo : '${c.motivo}\nRespuesta: ${c.respuesta}'),
+              subtitle: Text(
+                c.respuesta == null
+                    ? c.motivo
+                    : '${c.motivo}\nRespuesta: ${c.respuesta}',
+              ),
               trailing: Chip(label: Text(c.estado.label)),
             ),
         ],
@@ -199,15 +239,21 @@ class _MyAttendanceScreenState extends ConsumerState<MyAttendanceScreen> {
     if (result == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(qrIssueServiceProvider).requestCorrection(
+      await ref
+          .read(qrIssueServiceProvider)
+          .requestCorrection(
             worker: user,
             fecha: result.fecha,
             tipo: result.tipo,
             motivo: result.motivo,
           );
-      messenger.showSnackBar(const SnackBar(content: Text('Solicitud enviada.')));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Solicitud enviada.')),
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(ErrorMapper.map(e).message)),
+      );
     }
   }
 }
@@ -219,15 +265,23 @@ class _RecordTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final out = record.salida == null ? 'en curso' : LimaTime.formatTime(record.salida!);
+    final out = record.salida == null
+        ? 'en curso'
+        : LimaTime.formatTime(record.salida!);
     return ListTile(
       dense: true,
-      leading: Icon(record.regularizada ? Icons.edit_calendar : Icons.qr_code_2),
-      title: Text('${LimaTime.dateKey(record.entrada)} · '
-          '${LimaTime.formatTime(record.entrada)} → $out'),
-      subtitle: Text(record.regularizada
-          ? '${record.origen.label}: ${record.motivo ?? ''}'
-          : 'QR'),
+      leading: Icon(
+        record.regularizada ? Icons.edit_calendar : Icons.qr_code_2,
+      ),
+      title: Text(
+        '${LimaTime.dateKey(record.entrada)} · '
+        '${LimaTime.formatTime(record.entrada)} → $out',
+      ),
+      subtitle: Text(
+        record.regularizada
+            ? '${record.origen.label}: ${record.motivo ?? ''}'
+            : 'QR',
+      ),
     );
   }
 }

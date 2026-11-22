@@ -16,7 +16,11 @@ import 'terminal_binding.dart';
 
 /// QR emitido para el trabajador. Generarlo NO registra asistencia.
 class IssuedQr {
-  const IssuedQr({required this.payload, required this.token, required this.expiresAt});
+  const IssuedQr({
+    required this.payload,
+    required this.token,
+    required this.expiresAt,
+  });
 
   /// Texto que se dibuja en el QR.
   final String payload;
@@ -42,10 +46,14 @@ class QrIssueService {
   }) async {
     final open = state?.abierta ?? false;
     if (type == PunchType.entrada && open) {
-      throw const AppFailure('Ya tienes una entrada abierta. Genera el QR de salida.');
+      throw const AppFailure(
+        'Ya tienes una entrada abierta. Genera el QR de salida.',
+      );
     }
     if (type == PunchType.salida && !open) {
-      throw const AppFailure('No tienes una entrada abierta para registrar salida.');
+      throw const AppFailure(
+        'No tienes una entrada abierta para registrar salida.',
+      );
     }
     if (!worker.activo) {
       throw const AppFailure('Tu cuenta no está activa.');
@@ -71,7 +79,11 @@ class QrIssueService {
     final error = Validators.motivo(motivo);
     if (error != null) throw AppFailure(error);
     await _repo.requestCorrection(
-        uid: worker.uid, fecha: fecha, tipo: tipo, motivo: motivo);
+      uid: worker.uid,
+      fecha: fecha,
+      tipo: tipo,
+      motivo: motivo,
+    );
   }
 }
 
@@ -80,14 +92,14 @@ class ScanResult {
     required this.type,
     required this.name,
     required this.at,
-  })  : success = true,
-        message = '';
+  }) : success = true,
+       message = '';
 
   const ScanResult.failed(this.message)
-      : success = false,
-        type = null,
-        name = '',
-        at = null;
+    : success = false,
+      type = null,
+      name = '',
+      at = null;
 
   final bool success;
   final String message;
@@ -117,7 +129,8 @@ class TerminalScanService {
     final deviceKey = await _keys.read(terminalUid);
     if (deviceKey == null) {
       return const ScanResult.failed(
-          'Esta tablet no está enlazada a la terminal. Inicia sesión de nuevo.');
+        'Esta tablet no está enlazada a la terminal. Inicia sesión de nuevo.',
+      );
     }
     try {
       final token = await _repo.fetchToken(tokenId);
@@ -172,14 +185,20 @@ class TerminalAdminService {
     required String password,
   }) async {
     _ensureSuper(actor);
-    if (nombre.trim().length < 2) throw const AppFailure('Indica el nombre de la terminal.');
+    if (nombre.trim().length < 2) {
+      throw const AppFailure('Indica el nombre de la terminal.');
+    }
     final mail = Validators.email(email);
     if (mail != null) throw AppFailure(mail);
     if (password.length < 10) {
-      throw const AppFailure('La contraseña de la terminal debe tener al menos 10 caracteres.');
+      throw const AppFailure(
+        'La contraseña de la terminal debe tener al menos 10 caracteres.',
+      );
     }
-    final account = await _accounts.createAccount(email.trim().toLowerCase(),
-        password: password);
+    final account = await _accounts.createAccount(
+      email.trim().toLowerCase(),
+      password: password,
+    );
     try {
       await _repo.authorize(actor, nombre: nombre, uid: account.uid);
     } catch (_) {
@@ -189,15 +208,37 @@ class TerminalAdminService {
     await account.commit();
   }
 
-  Future<void> setActive(AppUser actor, AttendanceTerminal terminal,
-      {required bool active}) async {
+  Future<void> setActive(
+    AppUser actor,
+    AttendanceTerminal terminal, {
+    required bool active,
+  }) async {
     _ensureSuper(actor);
     await _repo.setActive(actor, terminal, active: active);
   }
 
-  Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal) async {
+  Future<void> resetDeviceLink(
+    AppUser actor,
+    AttendanceTerminal terminal,
+  ) async {
     _ensureSuper(actor);
     await _repo.resetDeviceLink(actor, terminal);
+  }
+
+  /// Solicita la eliminación definitiva de una terminal inhabilitada. No borra
+  /// nada: deja una solicitud auditada que el propietario procesa con
+  /// `tools/delete_terminal.js` (la app no puede eliminar cuentas de Auth).
+  Future<void> requestDeletion(
+    AppUser actor,
+    AttendanceTerminal terminal,
+  ) async {
+    _ensureSuper(actor);
+    if (terminal.activo) {
+      throw const AppFailure(
+        'Inhabilita la terminal antes de solicitar su eliminación.',
+      );
+    }
+    await _repo.requestDeletion(actor, terminal);
   }
 
   void _ensureSuper(AppUser actor) {
@@ -323,7 +364,11 @@ class AttendanceAdminService {
     if (respuesta.trim().length < 5) {
       throw const AppFailure('Escribe una respuesta para el trabajador.');
     }
-    await _repo.resolveCorrection(actor, request,
-        approved: approved, respuesta: respuesta);
+    await _repo.resolveCorrection(
+      actor,
+      request,
+      approved: approved,
+      respuesta: respuesta,
+    );
   }
 }

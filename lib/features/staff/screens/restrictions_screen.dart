@@ -46,12 +46,16 @@ class RestrictionsScreen extends ConsumerWidget {
                 children: [
                   for (final r in list)
                     ListTile(
-                      leading: Icon(r.activa ? Icons.block : Icons.check_circle_outline),
+                      leading: Icon(
+                        r.activa ? Icons.block : Icons.check_circle_outline,
+                      ),
                       title: Text(r.documento),
-                      subtitle: Text(r.activa
-                          ? 'Activa · revisar el ${r.revisarEn}'
-                              '${r.needsReview(DateTime.now()) ? ' (REVISIÓN PENDIENTE)' : ''}'
-                          : 'Levantada'),
+                      subtitle: Text(
+                        r.activa
+                            ? 'Activa · revisar el ${r.revisarEn}'
+                                  '${r.needsReview(DateTime.now()) ? ' (REVISIÓN PENDIENTE)' : ''}'
+                            : 'Levantada',
+                      ),
                       onTap: () => _detail(context, ref, actor, r),
                     ),
                 ],
@@ -60,7 +64,11 @@ class RestrictionsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _establish(BuildContext context, WidgetRef ref, AppUser actor) async {
+  Future<void> _establish(
+    BuildContext context,
+    WidgetRef ref,
+    AppUser actor,
+  ) async {
     final input = await showDialog<({String doc, String why, DateTime review})>(
       context: context,
       builder: (_) => const _EstablishDialog(),
@@ -68,19 +76,27 @@ class RestrictionsScreen extends ConsumerWidget {
     if (input == null || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(restrictionServiceProvider).establish(
+      await ref
+          .read(restrictionServiceProvider)
+          .establish(
             actor,
             documento: input.doc,
             justification: input.why,
             reviewOn: input.review,
           );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(ErrorMapper.map(e).message)),
+      );
     }
   }
 
-  Future<void> _detail(BuildContext context, WidgetRef ref, AppUser actor,
-      RehireRestriction r) async {
+  Future<void> _detail(
+    BuildContext context,
+    WidgetRef ref,
+    AppUser actor,
+    RehireRestriction r,
+  ) async {
     final service = ref.read(restrictionServiceProvider);
     String? why;
     try {
@@ -98,7 +114,9 @@ class RestrictionsScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(r.activa ? 'Activa. Revisar el ${r.revisarEn}.' : 'Levantada.'),
+            Text(
+              r.activa ? 'Activa. Revisar el ${r.revisarEn}.' : 'Levantada.',
+            ),
             const SizedBox(height: 8),
             Text('Última justificación (confidencial):\n${why ?? '—'}'),
             if (r.activa) ...[
@@ -106,15 +124,23 @@ class RestrictionsScreen extends ConsumerWidget {
               TextField(
                 controller: controller,
                 maxLines: 2,
-                decoration: const InputDecoration(labelText: 'Justificación para levantarla'),
+                decoration: const InputDecoration(
+                  labelText: 'Justificación para levantarla',
+                ),
               ),
             ],
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
           if (r.activa)
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Levantar')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Levantar'),
+            ),
         ],
       ),
     );
@@ -125,7 +151,9 @@ class RestrictionsScreen extends ConsumerWidget {
     try {
       await service.lift(actor, documento: r.documento, justification: text);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(ErrorMapper.map(e).message)),
+      );
     }
   }
 }
@@ -162,14 +190,18 @@ class _EstablishDialogState extends State<_EstablishDialog> {
             children: [
               TextFormField(
                 controller: _doc,
-                decoration: const InputDecoration(labelText: 'DNI o carné de extranjería'),
+                decoration: const InputDecoration(
+                  labelText: 'DNI o carné de extranjería',
+                ),
                 validator: RestrictionService.validateDocument,
               ),
               TextFormField(
                 controller: _why,
                 maxLines: 3,
                 maxLength: 1000,
-                decoration: const InputDecoration(labelText: 'Justificación (confidencial)'),
+                decoration: const InputDecoration(
+                  labelText: 'Justificación (confidencial)',
+                ),
                 validator: Validators.motivo,
               ),
               ListTile(
@@ -192,11 +224,18 @@ class _EstablishDialogState extends State<_EstablishDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(
           onPressed: () {
             if (!_formKey.currentState!.validate()) return;
-            Navigator.pop(context, (doc: _doc.text, why: _why.text, review: _review));
+            Navigator.pop(context, (
+              doc: _doc.text,
+              why: _why.text,
+              review: _review,
+            ));
           },
           child: const Text('Guardar'),
         ),

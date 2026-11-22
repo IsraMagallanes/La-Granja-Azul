@@ -15,21 +15,62 @@ enum AppRoute {
   verifyEmail('/verificar-correo'),
 
   // Personal (requieren sesión y permiso).
-  dashboard('/app/dashboard', 'Dashboard', Icons.dashboard, Permission.viewDashboard),
+  dashboard(
+    '/app/dashboard',
+    'Dashboard',
+    Icons.dashboard,
+    Permission.viewDashboard,
+  ),
   waiter('/app/mesero', 'Mesero', Icons.room_service, Permission.takeOrders),
   kitchen('/app/cocina', 'Cocina', Icons.soup_kitchen, Permission.useKitchen),
   cashier('/app/caja', 'Caja', Icons.point_of_sale, Permission.useCashier),
-  inventory('/app/inventario', 'Inventario', Icons.inventory_2, Permission.manageInventory),
+  inventory(
+    '/app/inventario',
+    'Inventario',
+    Icons.inventory_2,
+    Permission.manageInventory,
+  ),
   users('/app/usuarios', 'Usuarios', Icons.group, Permission.manageStaff),
-  roles('/app/roles', 'Roles y permisos', Icons.admin_panel_settings, Permission.manageRoles),
+  roles(
+    '/app/roles',
+    'Roles y permisos',
+    Icons.admin_panel_settings,
+    Permission.manageRoles,
+  ),
   tables('/app/mesas', 'Mesas', Icons.table_restaurant, Permission.viewTables),
   menuAdmin('/app/carta', 'Carta', Icons.menu_book, Permission.manageMenu),
   orders('/app/pedidos', 'Pedidos', Icons.receipt_long, Permission.viewOrders),
+  reservations(
+    '/app/reservaciones',
+    'Reservaciones',
+    Icons.event_seat,
+    Permission.viewReservations,
+  ),
   reports('/app/reportes', 'Reportes', Icons.bar_chart, Permission.viewReports),
-  attendanceAdmin('/app/asistencia', 'Asistencia', Icons.fact_check, Permission.manageAttendance),
-  myAttendance('/app/mi-asistencia', 'Mi asistencia', Icons.qr_code_2, Permission.ownAttendance),
-  terminals('/app/terminales', 'Terminales', Icons.tablet_android, Permission.manageTerminals),
-  restrictions('/app/restricciones', 'Restricciones', Icons.block, Permission.manageRestrictions),
+  attendanceAdmin(
+    '/app/asistencia',
+    'Asistencia',
+    Icons.fact_check,
+    Permission.manageAttendance,
+  ),
+  myAttendance(
+    '/app/mi-asistencia',
+    'Mi asistencia',
+    Icons.qr_code_2,
+    Permission.ownAttendance,
+  ),
+  terminals(
+    '/app/terminales',
+    'Terminales',
+    Icons.tablet_android,
+    Permission.manageTerminals,
+  ),
+  restrictions(
+    '/app/restricciones',
+    'Restricciones',
+    Icons.block,
+    Permission.manageRestrictions,
+  ),
   audit('/app/auditoria', 'Auditoría', Icons.history, Permission.viewAudit),
 
   // Terminal de asistencia del restaurante (cuenta de dispositivo, no personal).
@@ -43,6 +84,19 @@ enum AppRoute {
   final Permission? permission;
 
   bool get isStaff => permission != null;
+
+  /// Módulos operativos del día a día: el personal que no es Admin/Superadmin
+  /// solo accede a ellos con la jornada abierta (entrada registrada).
+  bool get requiresShift => switch (this) {
+    waiter ||
+    kitchen ||
+    cashier ||
+    inventory ||
+    tables ||
+    orders ||
+    reservations => true,
+    _ => false,
+  };
 
   static AppRoute? fromPath(String path) {
     for (final route in values) {

@@ -33,15 +33,17 @@ Future<FakeAuthRepository> pumpApp(
 }
 
 void main() {
-  testWidgets('sesión persistida: entra directo al dashboard del superadmin',
-      (tester) async {
+  testWidgets('sesión persistida: entra directo al dashboard del superadmin', (
+    tester,
+  ) async {
     await pumpApp(tester, initialUid: 'u1');
     expect(find.text('Bienvenido, Usuario u1'), findsOneWidget);
     expect(find.text('Roles y permisos'), findsWidgets);
   });
 
-  testWidgets('recuperación de contraseña envía el correo y confirma',
-      (tester) async {
+  testWidgets('recuperación de contraseña envía el correo y confirma', (
+    tester,
+  ) async {
     final auth = await pumpApp(tester);
     await tester.tap(find.text('¿Olvidaste tu contraseña?'));
     await tester.pumpAndSettle();

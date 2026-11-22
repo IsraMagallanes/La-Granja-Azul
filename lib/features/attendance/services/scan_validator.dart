@@ -35,13 +35,15 @@ class ScanValidator {
       case PunchType.entrada:
         if (open) {
           return const ScanRejected(
-              'Ya tiene una entrada registrada. Genere el QR de salida.');
+            'Ya tiene una entrada registrada. Genere el QR de salida.',
+          );
         }
         return ScanProceed(token);
       case PunchType.salida:
         if (!open || state?.asistenciaId == null) {
           return const ScanRejected(
-              'No hay una entrada abierta: no se puede registrar la salida.');
+            'No hay una entrada abierta: no se puede registrar la salida.',
+          );
         }
         return ScanProceed(token, openRecordId: state!.asistenciaId);
     }

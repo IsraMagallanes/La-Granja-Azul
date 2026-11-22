@@ -227,6 +227,77 @@ test('solo el superadmin autoriza y revoca terminales', async () => {
   await assertSucceeds(terminalBatch(as('super'), 'super', 'nueva', true).commit());
 });
 
+
+// Inhabilitar / reactivar / eliminar (mismos lotes que usa la app).
+function disableBatch(db, actor, id) {
+  const b = writeBatch(db);
+  b.set(doc(db, 'auditoria/d1'), {
+    accion: 'revocar_terminal', actorUid: actor, actorNombre: 'X', objetivo: id, campos: [], creadoEn: serverTimestamp(),
+  });
+  b.set(doc(db, `terminales/${id}`), {
+    nombre: 'Tablet cocina', activo: false, autorizadoPor: actor, actualizadoEn: serverTimestamp(), ultimaAuditoriaId: 'd1',
+  });
+  b.delete(doc(db, `terminalClaves/${id}`));
+  return b;
+}
+
+// La app ya no elimina terminales: lo hace un script con Admin SDK.
+function deleteBatch(db, actor, id) {
+  const b = writeBatch(db);
+  b.delete(doc(db, `terminales/${id}`));
+  b.delete(doc(db, `terminalClaves/${id}`));
+  return b;
+}
+
+test('inhabilitar: solo el superadmin; la terminal pierde su autorización y su enlace', async () => {
+  await seedToken(TOKEN, 'mesero', 'entrada');
+  await assertFails(disableBatch(as('admin'), 'admin', 'term1').commit());
+  await assertFails(disableBatch(as('term1'), 'term1', 'term1').commit());
+  await assertSucceeds(disableBatch(as('super'), 'super', 'term1').commit());
+  // Con la terminal inhabilitada ya no registra, aunque tuviera el secreto.
+  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+  // La auditoría y el resto de terminales quedan intactos.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    if (!(await getDoc(doc(db, 'auditoria/d1'))).exists()) throw new Error('falta auditoría');
+    if (!(await getDoc(doc(db, 'terminalClaves/termOff'))).exists()) throw new Error('otro enlace afectado');
+    if ((await getDoc(doc(db, 'terminalClaves/term1'))).exists()) throw new Error('enlace no invalidado');
+  });
+});
+
+test('reactivar no recupera el enlace: hay que enlazar de nuevo', async () => {
+  await seedToken(TOKEN, 'mesero', 'entrada');
+  await assertSucceeds(disableBatch(as('super'), 'super', 'term1').commit());
+  const db = as('super');
+  const b = writeBatch(db);
+  b.set(doc(db, 'auditoria/r1'), {
+    accion: 'autorizar_terminal', actorUid: 'super', actorNombre: 'X', objetivo: 'term1', campos: [], creadoEn: serverTimestamp(),
+  });
+  b.set(doc(db, 'terminales/term1'), {
+    nombre: 'Tablet cocina', activo: true, autorizadoPor: 'super', actualizadoEn: serverTimestamp(), ultimaAuditoriaId: 'r1',
+  });
+  await assertSucceeds(b.commit());
+  // Sin enlace vigente, la terminal reactivada aún no puede registrar.
+  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+  // Se enlaza de nuevo con un secreto nuevo y entonces sí.
+  await assertSucceeds(setDoc(doc(as('term1'), 'terminalClaves/term1'), { clave: 'n'.repeat(40), creadoEn: serverTimestamp() }));
+  await assertSucceeds(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN, 'asis1', 'n'.repeat(40)).commit());
+});
+
+test('ningún cliente elimina terminales, ni el superadmin ni siendo inhabilitada', async () => {
+  const { deleteDoc } = require('firebase/firestore');
+  await assertFails(deleteBatch(as('super'), 'super', 'term1').commit()); // activa
+  await assertFails(deleteBatch(as('super'), 'super', 'termOff').commit()); // inhabilitada
+  await assertFails(deleteDoc(doc(as('super'), 'terminales/termOff')));
+  await assertFails(deleteBatch(as('admin'), 'admin', 'termOff').commit());
+  await assertFails(deleteDoc(doc(as('termOff'), 'terminales/termOff')));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    if (!(await getDoc(doc(db, 'terminales/termOff'))).exists()) throw new Error('se eliminó');
+    if (!(await getDoc(doc(db, 'terminalClaves/termOff'))).exists()) throw new Error('se eliminó el enlace');
+  });
+});
+
 // --- Regularización ---
 
 function regBatch(db, actor, uid, overrides = {}) {

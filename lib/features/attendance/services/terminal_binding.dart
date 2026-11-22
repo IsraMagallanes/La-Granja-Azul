@@ -22,7 +22,10 @@ class SharedPrefsDeviceKeyStore implements DeviceKeyStore {
 
   @override
   Future<void> write(String terminalUid, String key) async {
-    await (await SharedPreferences.getInstance()).setString(_name(terminalUid), key);
+    await (await SharedPreferences.getInstance()).setString(
+      _name(terminalUid),
+      key,
+    );
   }
 
   @override
@@ -59,8 +62,10 @@ class TerminalBindingService {
 
   static String generateKey([Random? random]) {
     final rng = random ?? Random.secure();
-    return List.generate(32, (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List.generate(
+      32,
+      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
   }
 
   Future<BindingStatus> ensureBound(String terminalUid) async {

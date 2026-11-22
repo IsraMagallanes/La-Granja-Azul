@@ -37,7 +37,10 @@ class StaffDetailSheet extends ConsumerWidget {
     final actor = session.user;
     final policy = ref.watch(staffPolicyProvider);
     final canManage = policy.canManage(
-        actorRole: actor.role, actorUid: actor.uid, target: member);
+      actorRole: actor.role,
+      actorUid: actor.uid,
+      target: member,
+    );
     final service = ref.read(staffServiceProvider);
 
     Future<void> run(Future<void> Function() action, String done) async {
@@ -46,17 +49,23 @@ class StaffDetailSheet extends ConsumerWidget {
         await action();
         messenger.showSnackBar(SnackBar(content: Text(done)));
       } catch (e) {
-        messenger
-            .showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+        messenger.showSnackBar(
+          SnackBar(content: Text(ErrorMapper.map(e).message)),
+        );
       }
     }
 
     Future<void> changeStatus(StaffStatus target) async {
-      final change = await StatusChangeDialog.show(context,
-          member: member, target: target);
+      final change = await StatusChangeDialog.show(
+        context,
+        member: member,
+        target: target,
+      );
       if (change == null) return;
-      await run(() => service.changeStatus(actor, member, change),
-          'Estado actualizado.');
+      await run(
+        () => service.changeStatus(actor, member, change),
+        'Estado actualizado.',
+      );
     }
 
     Future<void> edit() async {
@@ -71,17 +80,22 @@ class StaffDetailSheet extends ConsumerWidget {
 
     Future<void> resendPassword() async {
       final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(const SnackBar(
-        duration: Duration(seconds: 30),
-        content: Row(children: [
-          SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-          SizedBox(width: 12),
-          Text('Solicitando el enlace a Firebase…'),
-        ]),
-      ));
+      messenger.showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 30),
+          content: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Solicitando el enlace a Firebase…'),
+            ],
+          ),
+        ),
+      );
       final outcome = await ref
           .read(emailRequesterProvider)
           .sendPasswordReset(member.email);
@@ -92,18 +106,27 @@ class StaffDetailSheet extends ConsumerWidget {
 
     final rows = <(String, String)>[
       if (member.incompleto)
-        ('Ficha', 'Incompleta (perfil anterior a la Fase 3): falta documento y celular.'),
+        (
+          'Ficha',
+          'Incompleta (perfil anterior a la Fase 3): falta documento y celular.',
+        ),
       if (!member.incompleto) (member.documentType.label, member.documento),
       ('Correo', member.email),
       if (member.celular.isNotEmpty) ('Celular', '+51 ${member.celular}'),
       if (member.celularAlterno != null)
         ('Celular alternativo', '+51 ${member.celularAlterno}'),
       ('Rol', member.role.label),
-      ('Estado', member.pendienteActivacion ? 'Pendiente de activación' : member.estado.label),
+      (
+        'Estado',
+        member.pendienteActivacion
+            ? 'Pendiente de activación'
+            : member.estado.label,
+      ),
       if (member.activadoEn != null)
         ('Activada', StaffMember.formatDate(member.activadoEn!)),
       if (member.bajaTipo != null) ('Último motivo', member.bajaTipo!.label),
-      if (!member.incompleto) ('Ingreso', StaffMember.formatDate(member.fechaIngreso)),
+      if (!member.incompleto)
+        ('Ingreso', StaffMember.formatDate(member.fechaIngreso)),
     ];
 
     return SafeArea(
@@ -112,8 +135,10 @@ class StaffDetailSheet extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(member.nombreCompleto,
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              member.nombreCompleto,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 12),
             for (final (label, value) in rows)
               Padding(
@@ -123,8 +148,10 @@ class StaffDetailSheet extends ConsumerWidget {
                   children: [
                     SizedBox(
                       width: 140,
-                      child: Text(label,
-                          style: Theme.of(context).textTheme.labelMedium),
+                      child: Text(
+                        label,
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
                     ),
                     Expanded(child: Text(value)),
                   ],
@@ -140,8 +167,11 @@ class StaffDetailSheet extends ConsumerWidget {
                   title: const Text('Puede regularizar marcaciones'),
                   value: member.puedeRegularizar,
                   onChanged: (v) => run(
-                    () => service.setRegularizationPermission(actor, member,
-                        allowed: v),
+                    () => service.setRegularizationPermission(
+                      actor,
+                      member,
+                      allowed: v,
+                    ),
                     'Permiso actualizado.',
                   ),
                 ),
@@ -159,8 +189,12 @@ class StaffDetailSheet extends ConsumerWidget {
                   if (member.activo && member.celular.isNotEmpty)
                     OutlinedButton.icon(
                       onPressed: () => run(
-                        () => ref.read(whatsAppInviteProvider).send(
-                            celular: member.celular, nombres: member.nombres),
+                        () => ref
+                            .read(whatsAppInviteProvider)
+                            .send(
+                              celular: member.celular,
+                              nombres: member.nombres,
+                            ),
                         'Se abrió WhatsApp: envía el mensaje manualmente.',
                       ),
                       icon: const Icon(Icons.chat),

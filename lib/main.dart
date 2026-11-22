@@ -7,14 +7,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'features/tables/controllers/table_providers.dart';
 import 'features/tables/repositories/firestore_table_repository.dart';
+import 'features/cashier/controllers/cash_providers.dart';
+import 'features/cashier/repositories/firestore_cash_repository.dart';
+import 'features/inventory/controllers/inventory_providers.dart';
+import 'features/inventory/repositories/firestore_inventory_repository.dart';
 import 'features/orders/controllers/order_providers.dart';
+import 'features/reports/controllers/report_providers.dart';
+import 'features/reports/repositories/firestore_reports_repository.dart';
 import 'features/orders/repositories/firestore_order_repository.dart';
+import 'features/reservations/controllers/reservation_providers.dart';
+import 'features/reservations/repositories/firestore_reservation_repository.dart';
 
 import 'features/attendance/controllers/attendance_providers.dart';
 import 'features/attendance/controllers/terminal_providers.dart';
 import 'features/attendance/repositories/firestore_attendance_repositories.dart';
 import 'features/audit/repositories/firestore_audit.dart';
 import 'features/menu/controllers/menu_providers.dart';
+import 'features/menu/repositories/firestore_dish_photo_repository.dart';
 import 'features/menu/repositories/firestore_menu_repository.dart';
 
 import 'features/auth/controllers/auth_providers.dart';
@@ -42,8 +51,23 @@ Future<void> main() async {
         orderRepositoryProvider.overrideWithValue(
           FirestoreOrderRepository(firestore),
         ),
+        inventoryRepositoryProvider.overrideWithValue(
+          FirestoreInventoryRepository(firestore),
+        ),
+        reportsRepositoryProvider.overrideWithValue(
+          FirestoreReportsRepository(firestore),
+        ),
+        cashRepositoryProvider.overrideWithValue(
+          FirestoreCashRepository(firestore),
+        ),
+        reservationRepositoryProvider.overrideWithValue(
+          FirestoreReservationRepository(firestore),
+        ),
         menuRepositoryProvider.overrideWithValue(
           FirestoreMenuRepository(FirebaseFirestore.instance),
+        ),
+        dishPhotoRepositoryProvider.overrideWithValue(
+          FirestoreDishPhotoRepository(FirebaseFirestore.instance),
         ),
         authRepositoryProvider.overrideWithValue(
           FirebaseAuthRepository(FirebaseAuth.instance),

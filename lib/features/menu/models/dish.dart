@@ -15,6 +15,15 @@ class Dish {
   final double price;
   final String imageUrl;
   final bool available;
+  Dish copyWith({bool? available}) => Dish(
+    id: id,
+    name: name,
+    description: description,
+    categoryId: categoryId,
+    price: price,
+    imageUrl: imageUrl,
+    available: available ?? this.available,
+  );
   factory Dish.fromMap(String id, Map<String, dynamic> data) => Dish(
     id: id,
     name: data['nombre'] as String,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:granja_azul/core/error/app_failure.dart';
 import 'package:granja_azul/features/attendance/models/attendance_models.dart';
 import 'package:granja_azul/features/attendance/repositories/attendance_repositories.dart';
@@ -12,16 +14,19 @@ import 'package:granja_azul/features/staff/models/status_change.dart';
 import 'package:granja_azul/features/staff/repositories/staff_repository.dart';
 import 'package:granja_azul/features/users/models/app_user.dart';
 
-AppUser actorOf(UserRole role, {String uid = 'actor', bool regularize = false}) =>
-    AppUser(
-      uid: uid,
-      email: '$uid@granja.pe',
-      nombre: 'Actor $uid',
-      nombres: 'Actor',
-      role: role,
-      activo: true,
-      puedeRegularizar: regularize,
-    );
+AppUser actorOf(
+  UserRole role, {
+  String uid = 'actor',
+  bool regularize = false,
+}) => AppUser(
+  uid: uid,
+  email: '$uid@granja.pe',
+  nombre: 'Actor $uid',
+  nombres: 'Actor',
+  role: role,
+  activo: true,
+  puedeRegularizar: regularize,
+);
 
 StaffMember memberOf(
   String uid, {
@@ -31,20 +36,19 @@ StaffMember memberOf(
   String? horarioId,
   String nombres = 'Ana',
   String apellidos = 'Pérez',
-}) =>
-    StaffMember(
-      uid: uid,
-      nombres: nombres,
-      apellidos: apellidos,
-      documentType: DocumentType.dni,
-      documento: documento,
-      email: '$uid@granja.pe',
-      celular: '987654321',
-      role: role,
-      estado: estado,
-      fechaIngreso: DateTime(2026, 1, 15),
-      horarioId: horarioId,
-    );
+}) => StaffMember(
+  uid: uid,
+  nombres: nombres,
+  apellidos: apellidos,
+  documentType: DocumentType.dni,
+  documento: documento,
+  email: '$uid@granja.pe',
+  celular: '987654321',
+  role: role,
+  estado: estado,
+  fechaIngreso: DateTime(2026, 1, 15),
+  horarioId: horarioId,
+);
 
 StaffDraft draftOf({
   UserRole role = UserRole.mesero,
@@ -53,18 +57,17 @@ StaffDraft draftOf({
   DocumentType type = DocumentType.dni,
   String celular = '912345678',
   String? alterno,
-}) =>
-    StaffDraft(
-      nombres: 'Luis',
-      apellidos: 'Gómez',
-      documentType: type,
-      documento: documento,
-      email: email,
-      celular: celular,
-      celularAlterno: alterno,
-      role: role,
-      fechaIngreso: DateTime(2026, 2, 1),
-    );
+}) => StaffDraft(
+  nombres: 'Luis',
+  apellidos: 'Gómez',
+  documentType: type,
+  documento: documento,
+  email: email,
+  celular: celular,
+  celularAlterno: alterno,
+  role: role,
+  fechaIngreso: DateTime(2026, 2, 1),
+);
 
 class FakeStaffRepository implements StaffRepository {
   final members = <StaffMember>[];
@@ -87,33 +90,51 @@ class FakeStaffRepository implements StaffRepository {
   Future<bool> emailExists(String email) async => emails.contains(email);
 
   @override
-  Future<CreatedStaff> create(StaffDraft draft, {required AppUser actor}) async {
+  Future<CreatedStaff> create(
+    StaffDraft draft, {
+    required AppUser actor,
+  }) async {
     created.add(draft);
     documents.add(draft.documentoNormalizado);
     emails.add(draft.emailNormalizado);
-    return CreatedStaff('uid-${created.length}',
-        resetEmailSent: resetEmailSent, verificationSent: verificationSent);
+    return CreatedStaff(
+      'uid-${created.length}',
+      resetEmailSent: resetEmailSent,
+      verificationSent: verificationSent,
+    );
   }
 
   @override
-  Future<void> update(StaffMember current, StaffDraft draft,
-      {required AppUser actor}) async {}
+  Future<void> update(
+    StaffMember current,
+    StaffDraft draft, {
+    required AppUser actor,
+  }) async {}
 
   @override
-  Future<void> changeStatus(StaffMember target, StatusChange change,
-      {required AppUser actor}) async {
+  Future<void> changeStatus(
+    StaffMember target,
+    StatusChange change, {
+    required AppUser actor,
+  }) async {
     changes.add((target.uid, change));
   }
 
   @override
-  Future<void> setRegularizationPermission(StaffMember target,
-      {required bool allowed, required AppUser actor}) async {
+  Future<void> setRegularizationPermission(
+    StaffMember target, {
+    required bool allowed,
+    required AppUser actor,
+  }) async {
     permissionChanges.add((target.uid, allowed));
   }
 
   @override
-  Future<void> assignSchedule(StaffMember target, String? scheduleId,
-      {required AppUser actor}) async {}
+  Future<void> assignSchedule(
+    StaffMember target,
+    String? scheduleId, {
+    required AppUser actor,
+  }) async {}
 }
 
 class FakeRestrictionRepository implements RestrictionRepository {
@@ -156,8 +177,22 @@ class FakeWorkerAttendanceRepository implements WorkerAttendanceRepository {
   final tokensCreated = <(PunchType, String)>[];
   final corrections = <String>[];
 
+  /// Estado de jornada por trabajador (`estadoAsistencia/{uid}`).
+  final states = <String, AttendanceState>{};
+  final _stateChanges = StreamController<void>.broadcast();
+
+  /// Simula que la terminal registró la entrada (`open`) o la salida.
+  void setShift(String uid, {required bool open}) {
+    states[uid] = AttendanceState(abierta: open, asistenciaId: 'a-$uid');
+    _stateChanges.add(null);
+  }
+
   @override
-  Future<QrToken> createToken(AppUser worker, PunchType type, String tokenId) async {
+  Future<QrToken> createToken(
+    AppUser worker,
+    PunchType type,
+    String tokenId,
+  ) async {
     tokensCreated.add((type, tokenId));
     return QrToken(
       id: tokenId,
@@ -173,7 +208,12 @@ class FakeWorkerAttendanceRepository implements WorkerAttendanceRepository {
   Stream<QrToken?> watchToken(String tokenId) => Stream.value(null);
 
   @override
-  Stream<AttendanceState?> watchState(String uid) => Stream.value(null);
+  Stream<AttendanceState?> watchState(String uid) async* {
+    yield states[uid];
+    await for (final _ in _stateChanges.stream) {
+      yield states[uid];
+    }
+  }
 
   @override
   Stream<List<AttendanceRecord>> watchHistory(String uid, {int limit = 30}) =>
@@ -214,7 +254,10 @@ class FakeTerminalScanRepository implements TerminalScanRepository {
   Future<AttendanceState?> fetchState(String uid) async => states[uid];
 
   @override
-  Future<void> enroll({required String terminalUid, required String key}) async {
+  Future<void> enroll({
+    required String terminalUid,
+    required String key,
+  }) async {
     if (enrolledKey != null) {
       throw const AppFailure('ya enlazada', code: 'permission-denied');
     }
@@ -254,34 +297,94 @@ class FakeTerminalScanRepository implements TerminalScanRepository {
 
 class FakeTerminalRepository implements TerminalRepository {
   final terminals = <String, AttendanceTerminal>{};
+  final _changes = StreamController<void>.broadcast();
 
-  @override
-  Stream<AttendanceTerminal?> watchTerminal(String uid) =>
-      Stream.value(terminals[uid]);
-
-  @override
-  Stream<List<AttendanceTerminal>> watchAll() =>
-      Stream.value(terminals.values.toList());
-
-  @override
-  Future<void> authorize(AppUser actor,
-      {required String nombre, required String uid}) async {
-    terminals[uid] = AttendanceTerminal(uid: uid, nombre: nombre, activo: true);
-  }
-
-  @override
-  Future<void> setActive(AppUser actor, AttendanceTerminal terminal,
-      {required bool active}) async {
-    terminals[terminal.uid] =
-        AttendanceTerminal(uid: terminal.uid, nombre: terminal.nombre, activo: active);
-  }
+  /// Terminales con enlace de dispositivo vigente (`terminalClaves`).
+  final linked = <String>{};
 
   final resets = <String>[];
 
-  @override
-  Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal) async {
-    resets.add(terminal.uid);
+  /// Solicitudes de eliminación definitiva registradas desde la app.
+  final deletionRequests = <String>{};
+
+  /// Si no es `null`, las operaciones de escritura fallan con este error.
+  Object? failWith;
+
+  /// Si no es `null`, las operaciones de escritura esperan a este completer.
+  Completer<void>? gate;
+
+  /// Simula un cambio hecho fuera de la app (p. ej. el script de eliminación).
+  void notify() => _changes.add(null);
+
+  Future<void> _write(void Function() change) async {
+    await gate?.future;
+    if (failWith != null) throw failWith!;
+    change();
+    _changes.add(null);
   }
+
+  @override
+  Stream<AttendanceTerminal?> watchTerminal(String uid) async* {
+    yield terminals[uid];
+    await for (final _ in _changes.stream) {
+      yield terminals[uid];
+    }
+  }
+
+  @override
+  Stream<List<AttendanceTerminal>> watchAll() async* {
+    yield terminals.values.toList();
+    await for (final _ in _changes.stream) {
+      yield terminals.values.toList();
+    }
+  }
+
+  @override
+  Future<void> authorize(
+    AppUser actor, {
+    required String nombre,
+    required String uid,
+  }) => _write(
+    () => terminals[uid] = AttendanceTerminal(
+      uid: uid,
+      nombre: nombre,
+      activo: true,
+    ),
+  );
+
+  @override
+  Future<void> setActive(
+    AppUser actor,
+    AttendanceTerminal terminal, {
+    required bool active,
+  }) => _write(() {
+    terminals[terminal.uid] = AttendanceTerminal(
+      uid: terminal.uid,
+      nombre: terminal.nombre,
+      activo: active,
+    );
+    if (!active) linked.remove(terminal.uid);
+    if (active) deletionRequests.remove(terminal.uid);
+  });
+
+  @override
+  Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal) =>
+      _write(() {
+        resets.add(terminal.uid);
+        linked.remove(terminal.uid);
+      });
+
+  @override
+  Stream<Set<String>> watchDeletionRequests() async* {
+    yield {...deletionRequests};
+    await for (final _ in _changes.stream) {
+      yield {...deletionRequests};
+    }
+  }
+
+  @override
+  Future<void> requestDeletion(AppUser actor, AttendanceTerminal terminal) =>
+      _write(() => deletionRequests.add(terminal.uid));
 }
 
 class FakePendingAccount implements PendingAccount {
@@ -324,7 +427,8 @@ class FakeDeviceKeyStore implements DeviceKeyStore {
   Future<String?> read(String terminalUid) async => keys[terminalUid];
 
   @override
-  Future<void> write(String terminalUid, String key) async => keys[terminalUid] = key;
+  Future<void> write(String terminalUid, String key) async =>
+      keys[terminalUid] = key;
 
   @override
   Future<void> clear(String terminalUid) async => keys.remove(terminalUid);

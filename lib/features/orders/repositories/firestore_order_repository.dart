@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/config/firestore_paths.dart';
 import '../../../core/error/app_failure.dart';
+import '../../inventory/models/inventory_models.dart';
+import '../../inventory/services/consumption_planner.dart';
 import '../models/order_item.dart';
 import '../models/restaurant_order.dart';
 import 'order_repository.dart';
@@ -157,17 +159,181 @@ class FirestoreOrderRepository implements OrderRepository {
   Future<void> removeItem(String orderId, String dishId) =>
       _item(orderId, dishId);
   @override
-  Future<void> changeStatus(
+  Future<void> changeStatus(String orderId, OrderStatus status) {
+    if (status != OrderStatus.registrado) {
+      throw const AppFailure('Transición de estado no válida.');
+    }
+    return _close(orderId, status);
+  }
+
+  @override
+  Future<void> cancelOrder(String orderId, String reason, String actorUid) =>
+      _close(
+        orderId,
+        OrderStatus.cancelado,
+        reason: reason,
+        actorUid: actorUid,
+      );
+
+  @override
+  Future<void> advanceKitchen(
     String orderId,
-    OrderStatus status,
-  ) => _db.runTransaction((tx) async {
+    KitchenStatus to,
+    String actorUid, {
+    String? forceReason,
+  }) async {
+    // Los platos de un pedido registrado ya no cambian (las reglas lo impiden),
+    // así que se leen fuera de la transacción; recetas e insumos, dentro.
+    final portions = <String, int>{};
+    if (to == KitchenStatus.listo) {
+      final items = await _orders.doc(orderId).collection('detalles').get();
+      for (final d in items.docs) {
+        portions[d.id] = d.data()['cantidad'] as int;
+      }
+    }
+    return _db.runTransaction((tx) async {
+      final ref = _orders.doc(orderId);
+      final order = (await tx.get(ref)).data();
+      if (order == null || order['estado'] != 'registrado') {
+        throw const AppFailure('El pedido no está en la cocina.');
+      }
+      final from = KitchenStatus.values.byName(
+        (order['estadoCocina'] as String?) ?? 'pendiente',
+      );
+      if (from.next != to) {
+        throw AppFailure(
+          'Otro usuario ya lo movió: ahora está «${from.label}». Se actualizará.',
+        );
+      }
+      if (to == KitchenStatus.listo) {
+        await _deductInventory(tx, orderId, portions, actorUid, forceReason);
+      }
+      tx.update(ref, {
+        'estadoCocina': to.name,
+        'revision': (order['revision'] as int) + 1,
+        'actualizadoEn': FieldValue.serverTimestamp(),
+        ...switch (to) {
+          KitchenStatus.preparando => {
+            'preparandoEn': FieldValue.serverTimestamp(),
+            'cocinaPor': actorUid,
+          },
+          KitchenStatus.listo => {'listoEn': FieldValue.serverTimestamp()},
+          KitchenStatus.entregado => {
+            'entregadoEn': FieldValue.serverTimestamp(),
+          },
+          KitchenStatus.pendiente => const <String, dynamic>{},
+        },
+      });
+    });
+  }
+
+  /// Fase 8B: descuenta del inventario lo que consume el pedido (receta × cantidad)
+  /// dentro de la misma transacción que lo pasa a «Listo». Deja un documento de
+  /// descuento con el id del pedido (de solo creación: un único descuento) y un
+  /// movimiento «consumo» por insumo. Lanza si falta stock: no cambia nada.
+  Future<void> _deductInventory(
+    Transaction tx,
+    String orderId,
+    Map<String, int> portions,
+    String actorUid,
+    String? forceReason,
+  ) async {
+    final recipes = <String, Recipe?>{};
+    for (final dish in portions.keys) {
+      final data = (await tx.get(
+        _db.collection(FirestorePaths.recetas).doc(dish),
+      )).data();
+      recipes[dish] = data == null ? null : Recipe.fromMap(dish, data);
+    }
+    final needs = ConsumptionPlanner.needs(portions, recipes);
+    final supplies = <String, Supply?>{};
+    for (final id in needs.keys) {
+      final data = (await tx.get(
+        _db.collection(FirestorePaths.insumos).doc(id),
+      )).data();
+      supplies[id] = data == null ? null : Supply.fromMap(id, data);
+    }
+    final profile = (await tx.get(
+      _db.collection(FirestorePaths.usuarios).doc(actorUid),
+    )).data();
+    if (profile == null) throw const AppFailure('No se encontró tu perfil.');
+    final name = profile['nombre'] as String;
+    final plan = ConsumptionPlanner.plan(
+      needs: needs,
+      supplies: supplies,
+      dishesWithoutRecipe: ConsumptionPlanner.dishesWithoutRecipe(
+        portions,
+        recipes,
+      ),
+      // Con motivo (solo Admin/Superadmin; las reglas lo exigen) se descuenta lo
+      // disponible en vez de rechazar.
+      allowShortage: forceReason != null,
+    );
+    final forced = plan.shortages.isNotEmpty;
+    final marker = _db
+        .collection(FirestorePaths.descuentosInventario)
+        .doc(orderId);
+    if ((await tx.get(marker)).exists) {
+      throw const AppFailure('Este pedido ya descontó su inventario.');
+    }
+    tx.set(marker, {
+      'insumos': plan.lines.length,
+      'platosSinReceta': plan.dishesWithoutRecipe,
+      'insumosOmitidos': plan.skippedSupplies,
+      if (forced) 'forzado': true,
+      'creadoPor': actorUid,
+      'creadoPorNombre': name,
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
+    if (forced) {
+      // Auditoría independiente de la excepción: motivo, faltantes, quién y cuándo.
+      tx.set(
+        _db.collection(FirestorePaths.excepcionesInventario).doc(orderId),
+        {
+          'motivo': forceReason,
+          'faltantes': [for (final s in plan.shortages) s.toMap()],
+          'creadoPor': actorUid,
+          'creadoPorNombre': name,
+          'creadoEn': FieldValue.serverTimestamp(),
+        },
+      );
+    }
+    for (var n = 0; n < plan.lines.length; n++) {
+      final line = plan.lines[n];
+      final move = _db
+          .collection(FirestorePaths.movimientosInventario)
+          .doc('${orderId}_$n');
+      tx.set(move, {
+        'insumoId': line.supply.id,
+        'insumoNombre': line.supply.name,
+        'tipo': MovementKind.consumo.name,
+        'delta': -line.qty,
+        'stockResultante': line.resulting,
+        'motivo': '',
+        'pedidoId': orderId,
+        'linea': n,
+        'creadoPor': actorUid,
+        'creadoPorNombre': name,
+        'creadoEn': FieldValue.serverTimestamp(),
+      });
+      tx.update(_db.collection(FirestorePaths.insumos).doc(line.supply.id), {
+        'stock': line.resulting,
+        'ultimoMovimiento': move.id,
+        'actualizadoEn': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  Future<void> _close(
+    String orderId,
+    OrderStatus status, {
+    String? reason,
+    String? actorUid,
+  }) => _db.runTransaction((tx) async {
     final ref = _orders.doc(orderId);
     final order = (await tx.get(ref)).data();
     if (order == null || order['estado'] != 'abierto') {
       throw const AppFailure('El pedido ya no es editable.');
-    }
-    if (status == OrderStatus.abierto) {
-      throw const AppFailure('Transición de estado no válida.');
     }
     if (status == OrderStatus.registrado && order['cantidadDetalles'] == 0) {
       throw const AppFailure('Agrega al menos un plato antes de registrar.');
@@ -183,6 +349,14 @@ class FirestoreOrderRepository implements OrderRepository {
       'estado': status.name,
       'revision': (order['revision'] as int) + 1,
       'actualizadoEn': FieldValue.serverTimestamp(),
+      if (status == OrderStatus.registrado) ...{
+        'estadoCocina': KitchenStatus.pendiente.name,
+        'registradoEn': FieldValue.serverTimestamp(),
+      },
+      if (status == OrderStatus.cancelado) ...{
+        'motivoCancelacion': reason,
+        'canceladoPor': actorUid,
+      },
     });
     if (status == OrderStatus.cancelado) {
       tx.update(tableRef, {'pedidoActivo': null});

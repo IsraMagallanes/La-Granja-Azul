@@ -36,9 +36,13 @@ class SchedulePicker extends ConsumerWidget {
       onChanged: (id) async {
         final messenger = ScaffoldMessenger.of(context);
         try {
-          await ref.read(staffServiceProvider).assignSchedule(actor, member, id);
+          await ref
+              .read(staffServiceProvider)
+              .assignSchedule(actor, member, id);
         } catch (e) {
-          messenger.showSnackBar(SnackBar(content: Text(ErrorMapper.map(e).message)));
+          messenger.showSnackBar(
+            SnackBar(content: Text(ErrorMapper.map(e).message)),
+          );
         }
       },
     );

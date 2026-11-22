@@ -11,17 +11,18 @@ class AuthController extends Notifier<AsyncValue<void>> {
   AsyncValue<void> build() => const AsyncData(null);
 
   Future<bool> signIn(String email, String password) => _run(
-        () => ref
-            .read(authRepositoryProvider)
-            .signIn(email: email.trim(), password: password),
-      );
+    () => ref
+        .read(authRepositoryProvider)
+        .signIn(email: email.trim(), password: password),
+  );
 
   /// Pide el enlace de contraseña con tiempo máximo y sin duplicar solicitudes.
   /// `true` solo si Firebase aceptó la solicitud.
   Future<bool> sendPasswordReset(String email) async {
     state = const AsyncLoading();
-    final outcome =
-        await ref.read(emailRequesterProvider).sendPasswordReset(email);
+    final outcome = await ref
+        .read(emailRequesterProvider)
+        .sendPasswordReset(email);
     state = outcome.ok
         ? const AsyncData(null)
         : AsyncError(AppFailure(outcome.message), StackTrace.current);

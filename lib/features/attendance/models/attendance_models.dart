@@ -78,9 +78,9 @@ class AttendanceState extends Equatable {
   final String? asistenciaId;
 
   static AttendanceState fromMap(Map<String, dynamic> data) => AttendanceState(
-        abierta: data['abierta'] == true,
-        asistenciaId: data['asistenciaId'] as String?,
-      );
+    abierta: data['abierta'] == true,
+    asistenciaId: data['asistenciaId'] as String?,
+  );
 
   @override
   List<Object?> get props => [abierta, asistenciaId];
@@ -146,8 +146,15 @@ class AttendanceRecord extends Equatable {
   }
 
   @override
-  List<Object?> get props =>
-      [id, uid, entrada, salida, origen, regularizada, motivo];
+  List<Object?> get props => [
+    id,
+    uid,
+    entrada,
+    salida,
+    origen,
+    regularizada,
+    motivo,
+  ];
 }
 
 /// Terminal autorizada (`terminales/{uid}`).
