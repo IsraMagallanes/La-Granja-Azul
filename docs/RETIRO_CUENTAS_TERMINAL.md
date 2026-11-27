@@ -1,36 +1,25 @@
-# Retiro de las cuentas de terminal antiguas
+# Retiro del sistema antiguo de terminales
 
-Parte del cambio al sistema de asistencia con QR generado por Caja, Admin y
-Superadmin (el trabajador escanea con su propia cuenta). Las cuentas de
-Authentication creadas solo para las antiguas terminales dejan de ser necesarias.
+El proyecto `la-granja-azul-app` es el Firebase temporal de desarrollo y pruebas,
+y el propietario autorizó (2026-11-27) retirar y eliminar definitivamente el
+sistema antiguo de terminales **y sus datos asociados**. La asistencia ahora la
+registra cada trabajador escaneando el QR que muestran Superadmin, Admin o
+Cajero (ver `docs/ESTADO_PROYECTO.md`).
 
-**Estado (2026-11-26):** herramientas desarrolladas y probadas **solo con
-emuladores**. **No se ha ejecutado nada contra Firebase real**: no se leyó ni se
-modificó Authentication ni Firestore de producción, no se deshabilitó ni eliminó
-ninguna cuenta y no se desplegaron reglas. El código antiguo de autenticación de
-terminal sigue en la app.
+## Estado
 
-**Cuentas clasificadas para retiro (decisión del propietario, sin ejecutar):**
-`qcws9YWDVPef3THHTQESmdE3LyC3` (Asistencia), `WlEJWNwIvFRzULaO1hQ6vYxbTjF2`
-(La Granja Azul) y `29519GHJw0RHouh6yj4lcdQkIVg1` (prueba). Ninguna seguirá
-como terminal: se retirarán con `--retirar-cuenta --marcar-retirada`, que
-conserva `terminales/{uid}`. El script vuelve a comprobar los cuatro criterios al
-ejecutar. Contexto completo: `docs/PROPUESTA_ASISTENCIA_QR_E_INVENTARIOS.md`.
+| Parte | Estado |
+|---|---|
+| Código de la app (pantallas, rutas, menú, controladores, servicios, permisos, sesión) | **Retirado** (local, sin commit) |
+| `firestore.rules` (sin `isTerminal()` ni colecciones de terminales) | **Desplegado el 2026-11-27** |
+| Datos en Firebase (documentos y cuentas de Authentication) | **Purgados el 2026-11-27** (38 de 38; ver «Paso 2»). Verificado de nuevo en vivo: Firestore ya no tiene ninguna colección de terminales |
+| Herramientas antiguas (`delete_terminal.js`, retiro de cuentas) | Retiradas; se sustituirán por una única herramienta de purga con simulación por defecto |
 
-## Qué es una «cuenta de terminal exclusiva»
+Un cliente ya **no puede** leer ni escribir `terminales`, `terminalClaves`,
+`terminalPruebas` ni `solicitudesEliminacionTerminal` (regla final de denegación
+y pruebas en `tools/asistencia.rules.test.js`). Las reglas nuevas se desplegaron el 2026-11-27 (ver «Revisión final de reglas» en `docs/ESTADO_PROYECTO.md`).
 
-Cumple las **cuatro** condiciones (`tools/lib/terminal_criteria.js`, definición
-única que usan el inventario y el retiro):
-
-1. existe `terminales/{uid}`;
-2. **no** existe `usuarios/{uid}` (ni trabajador, ni Caja, ni Admin, ni Superadmin);
-3. su correo no está en `correos` y su UID no está en `correos`/`documentos`;
-4. su UID nunca aparece como trabajador (`asistencias.uid`) ni como actor
-   (`auditoria.actorUid`); solo como `terminalId`.
-
-Si falla cualquiera, la cuenta queda **EXCLUIDA** y ninguna herramienta la toca.
-
-## Paso 1 — Inventario (solo lectura)
+## Paso 1: auditoría (solo lectura)
 
 ```powershell
 cd tools; npm install
@@ -39,65 +28,63 @@ node inventory_terminal_accounts.js          # informe en texto
 node inventory_terminal_accounts.js --json   # mismo contenido en JSON
 ```
 
-No escribe nada (hay una prueba que lo verifica sobre el código y otra sobre el
-estado completo de los emuladores). Por cuenta muestra UID, correo enmascarado,
-nombre y estado de la terminal, estado de Authentication, qué documentos de
-enlace existen, referencias (asistencias, auditoría, tokens usados) y el
-veredicto: `TERMINAL EXCLUSIVA`, `EXCLUIDA` (con el criterio incumplido) o
-`SIN CUENTA AUTH (solo documentos)`. Termina con el resumen de `qrTokens`
-(total, usados, sin usar, vencidos, anomalías y referencias). Coste de lectura:
-unos pocos documentos por cuenta más los `qrTokens` sin usar (dentro de la cuota
-gratuita de Spark para un restaurante).
+No escribe nada (hay pruebas sobre el código y sobre el estado de los
+emuladores). Informa de:
 
-## Paso 2 — Modo `--retirar-cuenta`
+- cada cuenta candidata con su veredicto (`TERMINAL EXCLUSIVA`, `EXCLUIDA` con el
+  criterio incumplido, o `SIN CUENTA AUTH`), y los documentos que tiene
+  (`terminales`, `terminalClaves`, `terminalPruebas`, solicitud de eliminación);
+- sus referencias: asistencias (`terminalId`), auditoría y tokens;
+- la clasificación de `qrTokens`: del **sistema nuevo** (nunca se tocan), antiguos
+  usados y referenciados por una asistencia (**se conservan**: son historia de
+  trabajadores reales), antiguos usados sin asistencia y antiguos sin usar
+  (**residuos**);
+- los registros de auditoría del sistema antiguo de terminales.
+
+## Paso 1b: simulación de la purga (solo lectura)
 
 ```powershell
-node delete_terminal.js <uid> --retirar-cuenta                       # simulación (por defecto)
-node delete_terminal.js <uid> --retirar-cuenta --execute             # terminal que migra a Caja
-node delete_terminal.js <uid> --retirar-cuenta --marcar-retirada --execute   # terminal que se retira del todo
+cd tools
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:utauera-del-repoclave.json'
+node purge_terminals_dryrun.js
 ```
 
-| | Migra a Caja | Se retira del todo (`--marcar-retirada`) |
-|---|---|---|
-| Cuenta de Authentication | se elimina | se elimina |
-| `terminalClaves`, `terminalPruebas`, solicitud de eliminación | se eliminan | se eliminan |
-| `terminales/{uid}` | **sin modificar** (nombre, estado, historial) | se conserva y queda `activo:false`, `retirada:true`, `retiradaEn` |
-| `asistencias`, `auditoria` | se conservan | se conservan |
-| `qrTokens` (usados **y** sin usar) | se conservan | se conservan |
+Verifica solo los elementos autorizados por el propietario (3 UIDs, 8 `qrTokens`, 21 ids de `auditoria`, documentos de `terminales` y `terminalPruebas`), excluye con motivo los que no coincidan y escribe `tools/informes/purga_terminales_simulacion.txt`. **No existe modo de eliminación**; `tools/terminal_purge_plan.test.js` comprueba que el código no contiene escrituras. La ejecución real requiere aprobación expresa.
 
-- Simulación por defecto; `--execute` exige terminal interactiva y escribir el
-  ID del proyecto y el UID.
-- Verifica los cuatro criterios también al ejecutar: una cuenta normal queda
-  `BLOQUEADA`.
-- Deja una entrada de auditoría `retirar_cuenta_terminal` (actor
-  `script-local`). Es seguro repetirlo si se interrumpe (no duplica la auditoría).
-- La tablet que migra deberá volver a enlazarse (el secreto antiguo se elimina);
-  eso pertenece al flujo nuevo con Caja.
+## Paso 1c: respaldo y reverificación previos (solo lectura)
 
-## Tokens `qrTokens`
+Después de la simulación (38 candidatos aprobados como lista), `node prepare_purge_backup.js` vuelve a consultar Firebase, compara con el informe anterior, excluye lo que haya cambiado, guarda en `tools/backups/purga_terminales_<fecha>/` (fuera de git, confidencial) un respaldo con manifiesto SHA-256 y escribe `tools/informes/purga_terminales_previa.txt`. No guarda hash de contraseña de Authentication. **Sigue sin existir ninguna eliminación implementada.**
 
-El inventario solo informa. **No se purga ninguno.** Los tokens usados son la
-referencia histórica (`asistencias.tokenId`/`salidaTokenId`) y se conservan. La
-purga de los sin usar (temporales, esquema antiguo) queda a decisión del
-propietario tras revisar las cantidades.
+## Paso 2: purga real autorizada (2026-11-27)
 
-## Pruebas (solo emuladores)
+El propietario autorizó eliminar exactamente los 38 elementos del informe previo. `tools/execute_terminal_purge.js --backup <carpeta> --confirmar ELIMINAR-38` verifica el respaldo (SHA-256), vuelve a consultar Firebase y **aborta sin borrar nada** ante cualquier diferencia; si falla a mitad, se detiene e informa eliminados y pendientes. No toca `terminalClaves`, `solicitudesEliminacionTerminal`, asistencias, perfiles ni otras cuentas. Escribe `tools/informes/purga_terminales_resultado.txt`. **Estado: EJECUTADA el 2026-11-27 (17:52 UTC): 38 de 38 eliminados** (3 cuentas de Authentication, 3 `terminales`, 3 `terminalPruebas`, 8 `qrTokens`, 21 `auditoria`); verificación en vivo correcta. Quedan: 6 asistencias, 5 perfiles, 14 `qrTokens`, 9 `auditoria`, 5 cuentas de Authentication. Respaldo local: `tools/backups/purga_terminales_2026-11-27T17-38-05-625Z` (confidencial, fuera de git). Resultado: `tools/informes/purga_terminales_resultado.txt`. Reglas nuevas desplegadas el 2026-11-27. Los scripts de simulación, búsqueda y respaldo siguen siendo de solo lectura.
 
-`tools/terminal_inventory.test.js` y `tools/terminal_retirement.test.js`,
-incluidas en `npm run test:rules`. Cubren: clasificación (exclusiva, personal,
-índices, trabajador/actor, huérfana, sin Auth), datos del informe y
-enmascarado, cantidades de tokens, solo lectura, retiro con y sin marca,
-conservación de tokens/asistencias/auditoría, bloqueo de cuentas de personal,
-fallos parciales y reanudación, y las salvaguardas de la línea de comandos.
+## Qué es una «cuenta de terminal exclusiva»
 
-## Pendiente (requiere autorización expresa)
+Cumple las **cuatro** condiciones (`tools/lib/terminal_criteria.js`):
 
-1. Ejecutar el inventario contra Firebase real y revisar la lista.
-2. Indicar qué terminales migran a Caja y cuáles se retiran.
-3. Decidir la purga de tokens sin usar.
-4. Ejecutar el retiro (`--execute`), cuenta por cuenta.
-5. Retirar el código antiguo de autenticación de terminal (`TerminalAuthenticated`,
-   `isTerminal()`, rutas y permisos) y actualizar `firestore.rules`.
-6. Al retirar `terminales`, las reglas y la app deberán admitir los campos
-   `retirada`/`retiradaEn` (hoy `hasOnly` los rechazaría en una escritura
-   desde la app; el script usa Admin SDK y no pasa por reglas).
+1. existe `terminales/{uid}`;
+2. **no** existe `usuarios/{uid}` (ni trabajador, ni Caja, ni Admin, ni Superadmin);
+3. su correo no está en `correos` y su UID no está en `correos`/`documentos`;
+4. su UID nunca aparece como trabajador (`asistencias.uid`) ni como actor
+   (`auditoria.actorUid`); solo como `terminalId`.
+
+Si falla cualquiera, la cuenta queda **EXCLUIDA** y no se propone para
+eliminación.
+
+## Propuesta de eliminación (a aprobar tras la auditoría)
+
+| Dato | Propuesta |
+|---|---|
+| Cuentas de Authentication de terminales **exclusivas** | Eliminar |
+| `terminales/{uid}`, `terminalClaves/{uid}`, `terminalPruebas/{uid}` de esas cuentas | Eliminar |
+| `solicitudesEliminacionTerminal/*` | Eliminar (sin utilidad) |
+| `qrTokens` antiguos **sin usar** o **usados sin ninguna asistencia** | Eliminar (residuos) |
+| `qrTokens` antiguos usados y referenciados por una asistencia | **Conservar** |
+| `qrTokens` del sistema nuevo (`generadorUid`) | **Conservar** |
+| `asistencias` (aunque tengan `terminalId`): son de trabajadores reales | **Conservar** |
+| `auditoria` del sistema antiguo (actor: el Superadmin real) | **Conservar** salvo orden expresa |
+| `usuarios` y cualquier cuenta con perfil | **Nunca** se tocan |
+
+Nada se ejecuta sin la aprobación expresa del propietario sobre la lista exacta
+que muestre la auditoría.

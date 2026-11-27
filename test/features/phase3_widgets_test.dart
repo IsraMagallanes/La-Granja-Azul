@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:granja_azul/features/attendance/controllers/attendance_providers.dart';
 import 'package:granja_azul/features/attendance/models/schedule.dart';
 import 'package:granja_azul/features/attendance/screens/my_attendance_screen.dart';
+import 'package:granja_azul/features/attendance/screens/qr_generator_screen.dart';
 import 'package:granja_azul/features/auth/controllers/auth_providers.dart';
 import 'package:granja_azul/features/auth/models/session_state.dart';
 import 'package:granja_azul/features/roles/models/user_role.dart';
@@ -98,64 +99,98 @@ void main() {
     );
   });
 
-  group('app del trabajador: QR', () {
-    final worker = actorOf(UserRole.mesero, uid: 'w1');
-
-    Future<FakeWorkerAttendanceRepository> pump(WidgetTester tester) async {
+  group('Mi asistencia y QR por rol', () {
+    Future<(FakeWorkerAttendanceRepository, FakeQrGenerationRepository)> pump(
+      WidgetTester tester,
+      UserRole role,
+      Widget screen,
+    ) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final repo = FakeWorkerAttendanceRepository();
+      final qrs = FakeQrGenerationRepository();
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             sessionProvider.overrideWith(
-              (ref) => Stream.value(Authenticated(worker)),
+              (ref) => Stream.value(Authenticated(actorOf(role, uid: 'u1'))),
             ),
             workerAttendanceRepositoryProvider.overrideWithValue(repo),
+            qrGenerationRepositoryProvider.overrideWithValue(qrs),
             schedulesProvider.overrideWith(
               (ref) => Stream.value(const <Schedule>[]),
             ),
           ],
-          child: const MaterialApp(home: Scaffold(body: MyAttendanceScreen())),
+          child: MaterialApp(home: Scaffold(body: screen)),
         ),
       );
       await tester.pumpAndSettle();
-      return repo;
+      return (repo, qrs);
     }
 
-    testWidgets(
-      'muestra QR temporal con contador; generarlo no registra asistencia',
-      (tester) async {
-        final repo = await pump(tester);
-        expect(find.text('Generar QR de entrada'), findsOneWidget);
-        expect(find.text('Generar QR de salida'), findsOneWidget);
+    const scan = 'Escanear QR de asistencia';
+    const show = 'Mostrar QR de asistencia';
 
-        await tester.tap(find.text('Generar QR de entrada'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 50));
-
-        expect(repo.tokensCreated, hasLength(1));
-        expect(find.textContaining('Vence en'), findsOneWidget);
-        expect(find.text('QR de entrada'), findsOneWidget);
-
-        // Descarta el temporizador para terminar la prueba.
+    testWidgets('Mesero y Cocina solo ven el escáner: ni botones de generar QR '
+        'ni selección manual de entrada o salida', (tester) async {
+      for (final role in [UserRole.mesero, UserRole.cocina]) {
+        final (_, qrs) = await pump(tester, role, const MyAttendanceScreen());
+        expect(find.text(scan), findsOneWidget, reason: role.name);
+        expect(find.text(show), findsNothing, reason: role.name);
+        expect(find.textContaining('Generar QR'), findsNothing);
+        expect(find.textContaining('QR de entrada'), findsNothing);
+        expect(find.textContaining('QR de salida'), findsNothing);
+        expect(qrs.created, isEmpty);
         await tester.pumpWidget(const SizedBox());
-      },
-    );
+      }
+    });
 
-    testWidgets('sin entrada abierta no se puede pedir el QR de salida', (
+    testWidgets('Cajero ve escáner y también puede mostrar el QR', (
       tester,
     ) async {
-      final repo = await pump(tester);
-      final button = tester.widget<ButtonStyleButton>(
-        find.ancestor(
-          of: find.text('Generar QR de salida'),
-          matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
-        ),
+      await pump(tester, UserRole.cajero, const MyAttendanceScreen());
+      expect(find.text(scan), findsOneWidget);
+      expect(find.text(show), findsOneWidget);
+    });
+
+    testWidgets('Admin y Superadmin solo muestran el QR; no escanean', (
+      tester,
+    ) async {
+      for (final role in [UserRole.admin, UserRole.superadmin]) {
+        await pump(tester, role, const MyAttendanceScreen());
+        expect(find.text(show), findsOneWidget, reason: role.name);
+        expect(find.text(scan), findsNothing, reason: role.name);
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('el generador muestra un QR con contador y sin registrar '
+        'asistencia', (tester) async {
+      final (repo, qrs) = await pump(
+        tester,
+        UserRole.cajero,
+        const QrGeneratorScreen(),
       );
-      expect(button.onPressed, isNull);
-      expect(repo.tokensCreated, isEmpty);
+      expect(qrs.created, hasLength(1));
+      expect(qrs.created.single.generadorRol, UserRole.cajero);
+      expect(find.textContaining('Vence en'), findsOneWidget);
+      expect(repo.states, isEmpty);
+      // Descarta los temporizadores para terminar la prueba.
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('un Mesero que llega a la pantalla de generar no crea QR', (
+      tester,
+    ) async {
+      final (_, qrs) = await pump(
+        tester,
+        UserRole.mesero,
+        const QrGeneratorScreen(),
+      );
+      expect(find.textContaining('no puede generar'), findsOneWidget);
+      expect(find.textContaining('Vence en'), findsNothing);
+      expect(qrs.created, isEmpty);
     });
   });
 }

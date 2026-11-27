@@ -122,8 +122,6 @@ service cloud.firestore {
         // Unicidad por documento y correo, también frente a personal de baja.
         && !exists(docPath('documentos', d.numeroDocumento))
         && !exists(docPath('correos', d.email))
-        // Una cuenta de terminal no puede convertirse en personal.
-        && !exists(docPath('terminales', uid))
         && getAfter(docPath('documentos', d.numeroDocumento)).data.uid == uid
         && getAfter(docPath('correos', d.email)).data.uid == uid
         && auditOk(d.ultimaAuditoriaId, uid);
@@ -275,19 +273,42 @@ service cloud.firestore {
 
     // -------------------------------------------------------------- Asistencia
     //
-    // Flujo QR: el trabajador crea un token efímero (45 s, un solo uso, sin
-    // datos personales en el QR). Solo una terminal autorizada puede
-    // consumirlo, y lo hace en un lote atómico: token usado + registro de
-    // asistencia + estado, todos con `request.time` (hora del servidor).
+    // Flujo QR: un GENERADOR (Superadmin, Admin o Cajero) muestra un QR efímero
+    // (45 s, sin datos personales). Un ESCÁNER (Mesero, Cocina o Cajero) lo lee
+    // con la cámara y registra SU PROPIA entrada o salida en un lote atómico:
+    // registro de asistencia + estado, con `request.time` (hora del servidor).
+    // La entrada o la salida la determina el estado de la jornada, no el QR. El
+    // Cajero solo puede escanear QR de Admin o Superadmin. El sistema antiguo de
+    // terminales (cuentas de dispositivo) fue retirado: ya no existen sus
+    // colecciones ni ninguna cuenta que no sea personal puede registrar
+    // asistencia.
 
-    // Una terminal es una cuenta de dispositivo autorizada que NO es personal:
-    // una cuenta con perfil en `usuarios` jamás cuenta como terminal, aunque
-    // alguien le cree un documento en `terminales`.
-    function isTerminal() {
-      return signedIn()
-        && exists(docPath('terminales', request.auth.uid))
-        && get(docPath('terminales', request.auth.uid)).data.activo == true
-        && !exists(docPath('usuarios', request.auth.uid));
+    function qrGeneratorRoles() {
+      return ['superadmin', 'admin', 'cajero'];
+    }
+
+    function qrScannerRoles() {
+      return ['mesero', 'cocina', 'cajero'];
+    }
+
+    // QR vigente y emitido por un generador permitido para quien lo escanea.
+    // Nadie escanea su propio QR; el generador sigue activo y con ese rol.
+    function scanTokenOk(tokenId) {
+      let t = get(docPath('qrTokens', tokenId)).data;
+      let gen = get(docPath('usuarios', t.generadorUid)).data;
+      return t.creadoEn + duration.value(45, 's') > request.time
+        && t.generadorUid != request.auth.uid
+        && gen.activo == true
+        && gen.rol == t.generadorRol
+        && (roleIs(['cajero'])
+            ? t.generadorRol in ['superadmin', 'admin']
+            : t.generadorRol in qrGeneratorRoles());
+    }
+
+    // Un mismo QR no encadena dos marcaciones seguidas del mismo trabajador.
+    function freshScanToken(uid, tokenId) {
+      return !exists(docPath('estadoAsistencia', uid))
+        || get(docPath('estadoAsistencia', uid)).data.get('tokenId', '') != tokenId;
     }
 
     function canRegularize() {
@@ -324,118 +345,38 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Terminales del restaurante: las autoriza y revoca solo el Superadmin.
-    match /terminales/{terminalUid} {
-      allow get: if signedIn() && (request.auth.uid == terminalUid || isSuper());
-      allow list: if isSuper();
-      allow create, update: if isSuper()
-        && request.resource.data.keys().hasOnly(
-          ['nombre', 'activo', 'autorizadoPor', 'actualizadoEn', 'ultimaAuditoriaId'])
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() >= 2
-        && request.resource.data.nombre.size() <= 40
-        && request.resource.data.activo is bool
-        && request.resource.data.autorizadoPor == request.auth.uid
-        && request.resource.data.actualizadoEn == request.time
-        && !exists(docPath('usuarios', terminalUid))
-        && auditOk(request.resource.data.ultimaAuditoriaId, terminalUid);
-      // La eliminación definitiva (cuenta de Authentication incluida) la hace
-      // un script local con Admin SDK, que no pasa por estas reglas.
-      allow delete: if false;
-    }
-
-    // Solicitud de eliminación definitiva de una terminal ya inhabilitada. La
-    // app no puede borrar cuentas de Authentication: solo deja la solicitud
-    // (auditada, solo Superadmin) y la procesa tools/delete_terminal.js con el
-    // Admin SDK, que no pasa por estas reglas. Reactivar la terminal la cancela.
-    match /solicitudesEliminacionTerminal/{terminalUid} {
-      allow read: if isSuper();
-      allow create: if isSuper()
-        && request.resource.data.keys().hasOnly(
-          ['nombre', 'solicitadoPor', 'solicitadoEn', 'ultimaAuditoriaId'])
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() >= 2
-        && request.resource.data.nombre.size() <= 40
-        && request.resource.data.solicitadoPor == request.auth.uid
-        && request.resource.data.solicitadoEn == request.time
-        && exists(docPath('terminales', terminalUid))
-        && get(docPath('terminales', terminalUid)).data.activo == false
-        && !exists(docPath('usuarios', terminalUid))
-        && auditOk(request.resource.data.ultimaAuditoriaId, terminalUid);
-      allow update: if false;
-      allow delete: if isSuper();
-    }
-
-    // Enlace terminal ↔ dispositivo físico. La tablet genera un secreto local
-    // y lo registra UNA vez (solo creación). Nadie puede leerlo desde un
-    // cliente, así que unas credenciales copiadas a otro equipo no pueden
-    // reproducir la prueba. El Superadmin puede restablecerlo (borrarlo).
-    match /terminalClaves/{terminalUid} {
-      allow read: if false;
-      allow create: if isTerminal()
-        && request.auth.uid == terminalUid
-        && request.resource.data.keys().hasOnly(['clave', 'creadoEn'])
-        && request.resource.data.clave is string
-        && request.resource.data.clave.size() >= 32
-        && request.resource.data.clave.size() <= 128
-        && request.resource.data.creadoEn == request.time;
-      allow update: if false;
-      allow delete: if isSuper();
-    }
-
-    // Prueba de posesión del secreto: cada lote de marcación la incluye con la
-    // hora del servidor. Escritura-solo; el valor debe coincidir con el
-    // registrado en `terminalClaves`.
-    match /terminalPruebas/{terminalUid} {
-      allow read: if false;
-      allow create, update: if isTerminal()
-        && request.auth.uid == terminalUid
-        && request.resource.data.keys().hasOnly(['clave', 'actualizadoEn'])
-        && request.resource.data.actualizadoEn == request.time
-        && request.resource.data.clave == get(docPath('terminalClaves', terminalUid)).data.clave;
-      allow delete: if false;
-    }
-
     match /qrTokens/{tokenId} {
-      allow get: if signedIn() && (isTerminal() || resource.data.uid == request.auth.uid);
+      // Se lee por id (128 bits, no adivinable); nunca se lista.
+      allow get: if hasActiveProfile();
       allow list: if false;
 
-      // El trabajador activo genera su propio token. Generar el QR NO registra
-      // asistencia.
-      allow create: if hasActiveProfile()
+      // Solo Superadmin, Admin y Cajero generan QR. Generarlo NO registra
+      // asistencia de nadie.
+      allow create: if roleIs(qrGeneratorRoles())
         && request.resource.data.keys().hasOnly(
-          ['uid', 'tipo', 'nombreMostrar', 'creadoEn', 'usadoEn', 'terminalId'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.tipo in ['entrada', 'salida']
+          ['generadorUid', 'generadorRol', 'nombreMostrar', 'creadoEn'])
+        && request.resource.data.generadorUid == request.auth.uid
+        && request.resource.data.generadorRol == get(profilePath()).data.rol
         && request.resource.data.nombreMostrar == get(profilePath()).data.get('nombres', '')
         && request.resource.data.creadoEn == request.time
-        && request.resource.data.usadoEn == null
-        && request.resource.data.terminalId == null
         && tokenId.matches('^[0-9a-f]{32}$');
-
-      // Solo una terminal autorizada lo consume, una vez y dentro de los 45 s, en
-      // el mismo lote que el registro de asistencia.
-      allow update: if isTerminal()
-        && resource.data.usadoEn == null
-        && resource.data.creadoEn + duration.value(45, 's') > request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usadoEn', 'terminalId'])
-        && request.resource.data.usadoEn == request.time
-        && request.resource.data.terminalId == request.auth.uid
-        && get(docPath('usuarios', resource.data.uid)).data.activo == true
-        && getAfter(docPath('terminalPruebas', request.auth.uid)).data.actualizadoEn == request.time
-        && getAfter(docPath('estadoAsistencia', resource.data.uid)).data.actualizadoEn == request.time;
-      allow delete: if false;
+      allow update, delete: if false;
     }
 
     match /estadoAsistencia/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || isAdmin() || isTerminal());
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
 
-      // Terminal: abre o cierra la jornada junto con su registro.
-      allow create, update: if isTerminal()
-        && request.resource.data.keys().hasOnly(['abierta', 'asistenciaId', 'actualizadoEn'])
+      // Escáner: abre o cierra SU jornada junto con su registro, con un QR
+      // vigente de un generador permitido.
+      allow create, update: if roleIs(qrScannerRoles())
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['abierta', 'asistenciaId', 'actualizadoEn', 'tokenId'])
         && request.resource.data.actualizadoEn == request.time
         && request.resource.data.abierta is bool
+        && request.resource.data.tokenId is string
+        && scanTokenOk(request.resource.data.tokenId)
+        && freshScanToken(uid, request.resource.data.tokenId)
         && (request.resource.data.abierta
             ? (getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.entrada == request.time
                && getAfter(docPath('asistencias', request.resource.data.asistenciaId)).data.uid == uid
@@ -461,37 +402,37 @@ service cloud.firestore {
       allow get: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow list: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
 
-      // Entrada por QR (terminal): la jornada anterior debe estar cerrada.
-      allow create: if isTerminal()
+      // Entrada por QR (escáner, la suya): la jornada anterior debe estar cerrada.
+      allow create: if roleIs(qrScannerRoles())
         && request.resource.data.keys().hasOnly(
-          ['uid', 'entrada', 'salida', 'origen', 'terminalId', 'tokenId', 'regularizada'])
+          ['uid', 'entrada', 'salida', 'origen', 'tokenId', 'regularizada'])
+        && request.resource.data.uid == request.auth.uid
         && request.resource.data.origen == 'qr'
         && request.resource.data.regularizada == false
         && request.resource.data.entrada == request.time
         && request.resource.data.salida == null
-        && request.resource.data.terminalId == request.auth.uid
-        && get(docPath('qrTokens', request.resource.data.tokenId)).data.usadoEn == null
-        && get(docPath('qrTokens', request.resource.data.tokenId)).data.uid == request.resource.data.uid
-        && get(docPath('qrTokens', request.resource.data.tokenId)).data.tipo == 'entrada'
-        && getAfter(docPath('qrTokens', request.resource.data.tokenId)).data.usadoEn == request.time
-        && get(docPath('usuarios', request.resource.data.uid)).data.activo == true
-        && (!exists(docPath('estadoAsistencia', request.resource.data.uid))
-            || get(docPath('estadoAsistencia', request.resource.data.uid)).data.abierta == false)
-        && getAfter(docPath('estadoAsistencia', request.resource.data.uid)).data.abierta == true
-        && getAfter(docPath('estadoAsistencia', request.resource.data.uid)).data.asistenciaId == id;
+        && request.resource.data.tokenId is string
+        && scanTokenOk(request.resource.data.tokenId)
+        && freshScanToken(request.auth.uid, request.resource.data.tokenId)
+        && (!exists(docPath('estadoAsistencia', request.auth.uid))
+            || get(docPath('estadoAsistencia', request.auth.uid)).data.abierta == false)
+        && getAfter(docPath('estadoAsistencia', request.auth.uid)).data.abierta == true
+        && getAfter(docPath('estadoAsistencia', request.auth.uid)).data.asistenciaId == id
+        && getAfter(docPath('estadoAsistencia', request.auth.uid)).data.tokenId == request.resource.data.tokenId;
 
-      // Salida por QR (terminal): exige entrada abierta de ese mismo registro.
-      allow update: if isTerminal()
+      // Salida por QR (escáner, la suya): exige su entrada abierta en ese registro.
+      allow update: if roleIs(qrScannerRoles())
+        && resource.data.uid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['salida', 'salidaTokenId'])
         && resource.data.get('salida', null) == null
         && request.resource.data.salida == request.time
-        && get(docPath('qrTokens', request.resource.data.salidaTokenId)).data.usadoEn == null
-        && get(docPath('qrTokens', request.resource.data.salidaTokenId)).data.uid == resource.data.uid
-        && get(docPath('qrTokens', request.resource.data.salidaTokenId)).data.tipo == 'salida'
-        && getAfter(docPath('qrTokens', request.resource.data.salidaTokenId)).data.usadoEn == request.time
-        && get(docPath('estadoAsistencia', resource.data.uid)).data.abierta == true
-        && get(docPath('estadoAsistencia', resource.data.uid)).data.asistenciaId == id
-        && getAfter(docPath('estadoAsistencia', resource.data.uid)).data.abierta == false;
+        && request.resource.data.salidaTokenId is string
+        && scanTokenOk(request.resource.data.salidaTokenId)
+        && freshScanToken(request.auth.uid, request.resource.data.salidaTokenId)
+        && get(docPath('estadoAsistencia', request.auth.uid)).data.abierta == true
+        && get(docPath('estadoAsistencia', request.auth.uid)).data.asistenciaId == id
+        && getAfter(docPath('estadoAsistencia', request.auth.uid)).data.abierta == false
+        && getAfter(docPath('estadoAsistencia', request.auth.uid)).data.tokenId == request.resource.data.salidaTokenId;
 
       // Regularización o marcación supervisada: motivo obligatorio y auditoría.
       allow create: if canRegularize()

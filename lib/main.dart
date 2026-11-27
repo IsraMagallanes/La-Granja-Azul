@@ -21,7 +21,6 @@ import 'features/reservations/controllers/reservation_providers.dart';
 import 'features/reservations/repositories/firestore_reservation_repository.dart';
 
 import 'features/attendance/controllers/attendance_providers.dart';
-import 'features/attendance/controllers/terminal_providers.dart';
 import 'features/attendance/repositories/firestore_attendance_repositories.dart';
 import 'features/audit/repositories/firestore_audit.dart';
 import 'features/menu/controllers/menu_providers.dart';
@@ -80,7 +79,6 @@ Future<void> main() async {
         userRepositoryProvider.overrideWithValue(
           FirestoreUserRepository(firestore),
         ),
-        staffAccountCreatorProvider.overrideWithValue(accounts),
         staffRepositoryProvider.overrideWithValue(
           FirestoreStaffRepository(firestore, accounts),
         ),
@@ -93,14 +91,14 @@ Future<void> main() async {
         workerAttendanceRepositoryProvider.overrideWithValue(
           FirestoreWorkerAttendanceRepository(firestore),
         ),
-        terminalScanRepositoryProvider.overrideWithValue(
-          FirestoreTerminalScanRepository(firestore),
+        qrGenerationRepositoryProvider.overrideWithValue(
+          FirestoreQrGenerationRepository(firestore),
+        ),
+        qrScanRepositoryProvider.overrideWithValue(
+          FirestoreQrScanRepository(firestore),
         ),
         attendanceAdminRepositoryProvider.overrideWithValue(
           FirestoreAttendanceAdminRepository(firestore),
-        ),
-        terminalRepositoryProvider.overrideWithValue(
-          FirestoreTerminalRepository(firestore),
         ),
       ],
       child: const GranjaAzulApp(),

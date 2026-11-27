@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../features/admin/screens/dashboard_screen.dart';
 import '../../features/attendance/screens/attendance_admin_screen.dart';
 import '../../features/attendance/screens/my_attendance_screen.dart';
-import '../../features/attendance/screens/terminal_screen.dart';
-import '../../features/attendance/screens/terminals_screen.dart';
+import '../../features/attendance/screens/qr_generator_screen.dart';
+import '../../features/attendance/screens/qr_scan_screen.dart';
 import '../../features/audit/screens/audit_screen.dart';
 import '../../features/auth/controllers/auth_providers.dart';
 import '../../features/auth/screens/access_denied_screen.dart';
@@ -51,7 +51,8 @@ const _staffScreens = <AppRoute, Widget>{
   AppRoute.reports: ReportsScreen(),
   AppRoute.attendanceAdmin: AttendanceAdminScreen(),
   AppRoute.myAttendance: MyAttendanceScreen(),
-  AppRoute.terminals: TerminalsScreen(),
+  AppRoute.generateQr: QrGeneratorScreen(),
+  AppRoute.scanQr: QrScanScreen(),
   AppRoute.restrictions: RestrictionsScreen(),
   AppRoute.audit: AuditScreen(),
 };
@@ -85,10 +86,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.forgotPassword.path,
         builder: (_, _) => const ForgotPasswordScreen(),
-      ),
-      GoRoute(
-        path: AppRoute.attendanceTerminal.path,
-        builder: (_, _) => const TerminalScreen(),
       ),
       GoRoute(
         path: AppRoute.verifyEmail.path,

@@ -5,7 +5,6 @@ import 'package:rxdart/rxdart.dart';
 
 import '../../../core/async/request_guard.dart';
 import '../../attendance/controllers/attendance_providers.dart';
-import '../../attendance/controllers/terminal_providers.dart';
 import '../../attendance/repositories/attendance_repositories.dart';
 import '../../roles/controllers/role_providers.dart';
 import '../../roles/services/permission_service.dart';
@@ -30,14 +29,12 @@ final authRepositoryProvider = Provider<AuthRepository>(
 final sessionProvider = StreamProvider<SessionState>((ref) {
   final auth = ref.watch(authRepositoryProvider);
   final users = ref.watch(userRepositoryProvider);
-  final terminals = ref.watch(terminalRepositoryProvider);
   final permissions = ref.watch(permissionServiceProvider);
   return auth.authStateChanges().distinct().switchMap(
     (account) => account == null
         ? Stream<SessionState>.value(const Unauthenticated())
         : _accountSession(
             users,
-            terminals,
             permissions,
             () => ref.read(workerAttendanceRepositoryProvider),
             account,
@@ -45,16 +42,15 @@ final sessionProvider = StreamProvider<SessionState>((ref) {
   );
 });
 
-/// Sesión de una cuenta con sesión de Firebase: personal si tiene perfil; si
-/// no, puede ser una terminal de asistencia autorizada.
+/// Sesión de una cuenta con sesión de Firebase: solo el personal con perfil
+/// accede; una cuenta sin perfil queda sin acceso.
 ///
-/// Sigue el perfil y, según su rol, la jornada o la terminal. Cada cambio del
+/// Sigue el perfil y, según su rol, la jornada. Cada cambio del
 /// perfil reemplaza la suscripción interior; se gestiona a mano (y no con
 /// `switchMap` anidado) para que la sesión nunca dependa de que termine un
 /// stream interior ya completado.
 Stream<SessionState> _accountSession(
   UserRepository users,
-  TerminalRepository terminals,
   PermissionService permissions,
   WorkerAttendanceRepository Function() attendance,
   AuthAccount account,
@@ -74,9 +70,7 @@ Stream<SessionState> _accountSession(
 
   Stream<SessionState> forProfile(AppUser? user) {
     if (user == null) {
-      return terminals
-          .watchTerminal(uid)
-          .map((terminal) => SessionResolver.fromAccount(null, terminal));
+      return Stream.value(SessionResolver.fromProfile(null));
     }
     SessionState resolve({required bool onShift}) =>
         SessionResolver.fromProfile(

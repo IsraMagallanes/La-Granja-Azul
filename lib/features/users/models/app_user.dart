@@ -24,7 +24,7 @@ class AppUser extends Equatable {
   final UserRole role;
   final bool activo;
 
-  /// Nombres de pila (se muestran en la terminal; no el apellido ni el documento).
+  /// Nombres de pila (se muestran en el QR de asistencia; no el apellido ni el documento).
   final String nombres;
 
   /// Horario asignado (`horarios/{id}`), si tiene.

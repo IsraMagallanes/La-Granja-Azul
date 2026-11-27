@@ -1,7 +1,8 @@
-// Reglas de asistencia por QR, terminales y regularización.
+// Reglas de asistencia por QR (genera Superadmin/Admin/Cajero; escanean
+// Mesero/Cocina/Cajero), terminales y regularización.
 const { test, before, after, beforeEach } = require('node:test');
 const { assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, writeBatch, serverTimestamp, Timestamp } = require('firebase/firestore');
+const { doc, collection, setDoc, getDoc, getDocs, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp } = require('firebase/firestore');
 const { createEnv, staff } = require('./support');
 
 let env;
@@ -26,6 +27,8 @@ beforeEach(async () => {
     await setDoc(doc(db, 'usuarios/adminReg'), staff({ nombres: 'Alba', rol: 'admin', puedeRegularizar: true, numeroDocumento: '33333333' }));
     await setDoc(doc(db, 'usuarios/mesero'), staff({ nombres: 'Mario', rol: 'mesero', numeroDocumento: '44444444' }));
     await setDoc(doc(db, 'usuarios/otro'), staff({ nombres: 'Olga', rol: 'cocina', numeroDocumento: '55555555' }));
+    await setDoc(doc(db, 'usuarios/caja'), staff({ nombres: 'Carla', rol: 'cajero', numeroDocumento: '77777771' }));
+    await setDoc(doc(db, 'usuarios/caja2'), staff({ nombres: 'Celia', rol: 'cajero', numeroDocumento: '77777772' }));
     await setDoc(doc(db, 'usuarios/baja'), staff({ nombres: 'Bruno', rol: 'cajero', estado: 'baja', activo: false, numeroDocumento: '66666666' }));
     await setDoc(doc(db, 'terminales/term1'), { nombre: 'Tablet cocina', activo: true });
     await setDoc(doc(db, 'terminales/termOff'), { nombre: 'Vieja', activo: false });
@@ -36,12 +39,12 @@ beforeEach(async () => {
 
 const as = (uid) => env.authenticatedContext(uid, { email_verified: true }).firestore();
 
-async function seedToken(id, uid, tipo, { ageSeconds = 0, usado = false } = {}) {
+/** QR de asistencia ya generado (siembra directa, sin pasar por las reglas). */
+async function seedQr(id, generadorUid, generadorRol, { ageSeconds = 0, nombre = 'Gema' } = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), `qrTokens/${id}`), {
-      uid, tipo, nombreMostrar: 'x',
+      generadorUid, generadorRol, nombreMostrar: nombre,
       creadoEn: Timestamp.fromMillis(Date.now() - ageSeconds * 1000),
-      usadoEn: usado ? Timestamp.now() : null, terminalId: null,
     });
   });
 }
@@ -51,13 +54,31 @@ async function seedOpen(uid, aid = 'asis1') {
     const db = ctx.firestore();
     await setDoc(doc(db, `asistencias/${aid}`), {
       uid, entrada: Timestamp.fromMillis(Date.now() - 3600_000), salida: null, origen: 'qr',
-      terminalId: 'term1', tokenId: 'old', regularizada: false,
+      tokenId: 'old', regularizada: false,
     });
     await setDoc(doc(db, `estadoAsistencia/${uid}`), { abierta: true, asistenciaId: aid, actualizadoEn: Timestamp.now() });
   });
 }
 
-function entradaBatch(db, terminal, uid, tokenId, aid = 'asis1', clave = KEY) {
+/** Entrada que registra SU PROPIO escáner, en un único lote atómico. */
+function scanEntrada(db, uid, tokenId, aid = 'asis1', overrides = {}) {
+  const b = writeBatch(db);
+  b.set(doc(db, `asistencias/${aid}`), {
+    uid, entrada: serverTimestamp(), salida: null, origen: 'qr', tokenId, regularizada: false, ...overrides,
+  });
+  b.set(doc(db, `estadoAsistencia/${uid}`), { abierta: true, asistenciaId: aid, actualizadoEn: serverTimestamp(), tokenId });
+  return b;
+}
+
+function scanSalida(db, uid, tokenId, aid = 'asis1') {
+  const b = writeBatch(db);
+  b.update(doc(db, `asistencias/${aid}`), { salida: serverTimestamp(), salidaTokenId: tokenId });
+  b.set(doc(db, `estadoAsistencia/${uid}`), { abierta: false, asistenciaId: aid, actualizadoEn: serverTimestamp(), tokenId });
+  return b;
+}
+
+/** Lote del flujo anterior (la terminal consumía el QR del trabajador). Ya no existe. */
+function legacyTerminalBatch(db, terminal, uid, tokenId, aid = 'asis1', clave = KEY) {
   const b = writeBatch(db);
   addProof(b, db, terminal, clave);
   b.update(doc(db, `qrTokens/${tokenId}`), { usadoEn: serverTimestamp(), terminalId: terminal });
@@ -68,234 +89,238 @@ function entradaBatch(db, terminal, uid, tokenId, aid = 'asis1', clave = KEY) {
   return b;
 }
 
-function salidaBatch(db, terminal, uid, tokenId, aid = 'asis1', clave = KEY) {
-  const b = writeBatch(db);
-  addProof(b, db, terminal, clave);
-  b.update(doc(db, `qrTokens/${tokenId}`), { usadoEn: serverTimestamp(), terminalId: terminal });
-  b.update(doc(db, `asistencias/${aid}`), { salida: serverTimestamp(), salidaTokenId: tokenId });
-  b.set(doc(db, `estadoAsistencia/${uid}`), { abierta: false, asistenciaId: aid, actualizadoEn: serverTimestamp() });
-  return b;
-}
-
-const newToken = (uid, tipo, extra = {}) => ({
-  uid, tipo, nombreMostrar: 'Mario', creadoEn: serverTimestamp(), usadoEn: null, terminalId: null, ...extra,
+const newToken = (uid, rol, extra = {}) => ({
+  generadorUid: uid, generadorRol: rol, nombreMostrar: 'Gema', creadoEn: serverTimestamp(), ...extra,
 });
 
-// --- Generación del QR (app del trabajador) ---
+// --- Generación del QR: solo Superadmin, Admin y Cajero ---
 
-test('el trabajador activo genera su QR sin registrar asistencia', async () => {
-  await assertSucceeds(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), newToken('mesero', 'entrada')));
+test('Superadmin, Admin y Cajero generan el QR sin registrar asistencia de nadie', async () => {
+  for (const [uid, rol, nombre] of [['super', 'superadmin', 'Sofia'], ['admin', 'admin', 'Adan'], ['caja', 'cajero', 'Carla']]) {
+    await assertSucceeds(setDoc(doc(as(uid), `qrTokens/${{ super: '1', admin: '2', caja: '3' }[uid].repeat(32)}`), newToken(uid, rol, { nombreMostrar: nombre })));
+  }
   await env.withSecurityRulesDisabled(async (ctx) => {
-    const snap = await getDoc(doc(ctx.firestore(), 'estadoAsistencia/mesero'));
-    if (snap.exists()) throw new Error('generar el QR no debe registrar asistencia');
+    for (const uid of ['super', 'admin', 'caja']) {
+      if ((await getDoc(doc(ctx.firestore(), `estadoAsistencia/${uid}`))).exists()) {
+        throw new Error('generar el QR no debe registrar asistencia');
+      }
+    }
   });
 });
 
-test('no se puede generar un QR a nombre de otro, inactivo o con datos extra', async () => {
-  await assertFails(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), newToken('otro', 'entrada')));
-  await assertFails(setDoc(doc(as('baja'), `qrTokens/${TOKEN}`), newToken('baja', 'entrada', { nombreMostrar: 'Bruno' })));
-  await assertFails(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), newToken('mesero', 'entrada', { dni: '44444444' })));
-  await assertFails(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), newToken('mesero', 'entrada', { tipo: 'cualquiera' })));
-  await assertFails(setDoc(doc(as('mesero'), 'qrTokens/corto'), newToken('mesero', 'entrada')));
+test('Mesero, Cocina y cuentas inactivas NO generan QR', async () => {
+  await assertFails(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), newToken('mesero', 'mesero', { nombreMostrar: 'Mario' })));
+  await assertFails(setDoc(doc(as('otro'), `qrTokens/${TOKEN}`), newToken('otro', 'cocina', { nombreMostrar: 'Olga' })));
+  // Aunque se hagan pasar por un rol que genera.
+  await assertFails(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), newToken('mesero', 'admin', { nombreMostrar: 'Mario' })));
+  await assertFails(setDoc(doc(as('otro'), `qrTokens/${TOKEN}`), newToken('otro', 'cajero', { nombreMostrar: 'Olga' })));
+  await assertFails(setDoc(doc(as('baja'), `qrTokens/${TOKEN}`), newToken('baja', 'cajero', { nombreMostrar: 'Bruno' })));
 });
 
-test('el trabajador no puede marcar como usado su propio QR', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(setDoc(doc(as('mesero'), `qrTokens/${TOKEN}`), { usadoEn: serverTimestamp() }, { merge: true }));
+test('el QR no se genera a nombre de otro, con otro rol, con datos extra ni con hora falsa', async () => {
+  const db = as('caja');
+  await assertFails(setDoc(doc(db, `qrTokens/${TOKEN}`), newToken('admin', 'cajero', { nombreMostrar: 'Carla' })));
+  await assertFails(setDoc(doc(db, `qrTokens/${TOKEN}`), newToken('caja', 'admin', { nombreMostrar: 'Carla' })));
+  await assertFails(setDoc(doc(db, `qrTokens/${TOKEN}`), newToken('caja', 'cajero', { nombreMostrar: 'Otra' })));
+  await assertFails(setDoc(doc(db, `qrTokens/${TOKEN}`), newToken('caja', 'cajero', { nombreMostrar: 'Carla', dni: '1' })));
+  await assertFails(setDoc(doc(db, `qrTokens/${TOKEN}`), newToken('caja', 'cajero', { nombreMostrar: 'Carla', usadoEn: null })));
+  await assertFails(setDoc(doc(db, `qrTokens/${TOKEN}`), newToken('caja', 'cajero', { nombreMostrar: 'Carla', creadoEn: Timestamp.fromMillis(Date.now() + 3600_000) })));
+  await assertFails(setDoc(doc(db, 'qrTokens/corto'), newToken('caja', 'cajero', { nombreMostrar: 'Carla' })));
 });
 
-// --- Terminal ---
+test('el QR es inmutable y solo se lee por id', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertFails(updateDoc(doc(as('admin'), `qrTokens/${TOKEN}`), { creadoEn: serverTimestamp() }));
+  await assertFails(deleteDoc(doc(as('admin'), `qrTokens/${TOKEN}`)));
+  await assertSucceeds(getDoc(doc(as('mesero'), `qrTokens/${TOKEN}`)));
+  await assertFails(getDocs(collection(as('mesero'), 'qrTokens')));
+  await assertFails(getDoc(doc(as('term1'), `qrTokens/${TOKEN}`)));
+});
 
-test('la terminal autorizada registra la entrada con hora del servidor', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertSucceeds(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+// --- Escaneo: Mesero, Cocina y Cajero registran SU entrada y salida ---
+
+test('el Mesero escanea el QR de Admin y registra su entrada con la hora del servidor', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertSucceeds(scanEntrada(as('mesero'), 'mesero', TOKEN).commit());
   await env.withSecurityRulesDisabled(async (ctx) => {
-    const snap = await getDoc(doc(ctx.firestore(), 'asistencias/asis1'));
-    const d = snap.data();
+    const d = (await getDoc(doc(ctx.firestore(), 'asistencias/asis1'))).data();
     if (Math.abs(d.entrada.toMillis() - Date.now()) > 60_000) throw new Error('hora no es la del servidor');
     if (d.salida !== null) throw new Error('salida debería ser nula');
+    if (d.uid !== 'mesero') throw new Error('el registro es de quien escanea');
   });
 });
 
-test('un QR no se reutiliza', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertSucceeds(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
-  // Reutilizar el mismo token de entrada, aun con otra jornada, se rechaza.
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN, 'asis2').commit());
+test('Mesero y Cocina escanean QR de Superadmin, Admin y Cajero', async () => {
+  const generators = [['super', 'superadmin'], ['admin', 'admin'], ['caja', 'cajero']];
+  for (const scanner of ['mesero', 'otro']) {
+    for (const [uid, rol] of generators) {
+      await env.clearFirestore();
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'usuarios/super'), staff({ nombres: 'Sofia', rol: 'superadmin', numeroDocumento: '11111111' }));
+        await setDoc(doc(db, 'usuarios/admin'), staff({ nombres: 'Adan', rol: 'admin', numeroDocumento: '22222222' }));
+        await setDoc(doc(db, 'usuarios/caja'), staff({ nombres: 'Carla', rol: 'cajero', numeroDocumento: '77777771' }));
+        await setDoc(doc(db, 'usuarios/mesero'), staff({ nombres: 'Mario', rol: 'mesero', numeroDocumento: '44444444' }));
+        await setDoc(doc(db, 'usuarios/otro'), staff({ nombres: 'Olga', rol: 'cocina', numeroDocumento: '55555555' }));
+      });
+      await seedQr(TOKEN, uid, rol);
+      await assertSucceeds(scanEntrada(as(scanner), scanner, TOKEN).commit());
+    }
+  }
 });
 
-test('un QR vencido (más de 45 s) se rechaza', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada', { ageSeconds: 120 });
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+test('el Cajero solo escanea QR de Admin o Superadmin', async () => {
+  await seedQr(TOKEN, 'caja2', 'cajero');
+  await assertFails(scanEntrada(as('caja'), 'caja', TOKEN).commit());
+  await seedQr(TOKEN2, 'admin', 'admin');
+  await assertSucceeds(scanEntrada(as('caja'), 'caja', TOKEN2).commit());
 });
 
-test('un QR ya usado se rechaza', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada', { usado: true });
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+test('el Cajero también puede escanear un QR de Superadmin', async () => {
+  await seedQr(TOKEN, 'super', 'superadmin');
+  await assertSucceeds(scanEntrada(as('caja'), 'caja', TOKEN).commit());
+});
+
+test('Admin y Superadmin no registran asistencia por QR', async () => {
+  await seedQr(TOKEN, 'caja', 'cajero');
+  await assertFails(scanEntrada(as('admin'), 'admin', TOKEN).commit());
+  await assertFails(scanEntrada(as('super'), 'super', TOKEN).commit());
+});
+
+test('nadie escanea su propio QR', async () => {
+  await seedQr(TOKEN, 'caja', 'cajero');
+  await assertFails(scanEntrada(as('caja'), 'caja', TOKEN).commit());
+});
+
+test('un QR inexistente, vencido o de un generador dado de baja se rechaza', async () => {
+  await assertFails(scanEntrada(as('mesero'), 'mesero', TOKEN).commit());
+  await seedQr(TOKEN, 'admin', 'admin', { ageSeconds: 120 });
+  await assertFails(scanEntrada(as('mesero'), 'mesero', TOKEN).commit());
+  // El rol del QR debe seguir siendo el actual del generador.
+  await seedQr(TOKEN2, 'mesero', 'admin');
+  await assertFails(scanEntrada(as('otro'), 'otro', TOKEN2).commit());
+  await seedQr('c'.repeat(32), 'baja', 'cajero');
+  await assertFails(scanEntrada(as('mesero'), 'mesero', 'c'.repeat(32)).commit());
+});
+
+test('el QR no registra la asistencia de otra persona', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertFails(scanEntrada(as('mesero'), 'otro', TOKEN).commit());
+  await assertFails(scanEntrada(as('admin'), 'otro', TOKEN).commit());
+});
+
+test('un trabajador dado de baja no puede marcar', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertFails(scanEntrada(as('baja'), 'baja', TOKEN).commit());
 });
 
 test('no se aceptan entradas duplicadas', async () => {
   await seedOpen('mesero');
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN, 'asis2').commit());
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertFails(scanEntrada(as('mesero'), 'mesero', TOKEN, 'asis2').commit());
 });
 
 test('no hay salida sin entrada', async () => {
-  await seedToken(TOKEN, 'mesero', 'salida');
-  const db = as('term1');
-  const b = writeBatch(db);
-  addProof(b, db, 'term1');
-  b.update(doc(db, `qrTokens/${TOKEN}`), { usadoEn: serverTimestamp(), terminalId: 'term1' });
-  b.set(doc(db, 'asistencias/falsa'), {
-    uid: 'mesero', entrada: serverTimestamp(), salida: serverTimestamp(), origen: 'qr', terminalId: 'term1', tokenId: TOKEN, regularizada: false,
-  });
-  b.set(doc(db, 'estadoAsistencia/mesero'), { abierta: false, asistenciaId: 'falsa', actualizadoEn: serverTimestamp() });
-  await assertFails(b.commit());
+  await seedQr(TOKEN, 'admin', 'admin');
+  const db = as('mesero');
+  await assertFails(scanEntrada(db, 'mesero', TOKEN, 'falsa', { salida: serverTimestamp() }).commit());
+  await assertFails(scanSalida(db, 'mesero', TOKEN, 'inexistente').commit());
 });
 
 test('la salida cierra la jornada abierta y no se repite', async () => {
   await seedOpen('mesero');
-  await seedToken(TOKEN, 'mesero', 'salida');
-  await assertSucceeds(salidaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
-  await seedToken(TOKEN2, 'mesero', 'salida');
-  await assertFails(salidaBatch(as('term1'), 'term1', 'mesero', TOKEN2).commit());
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertSucceeds(scanSalida(as('mesero'), 'mesero', TOKEN).commit());
+  await seedQr(TOKEN2, 'admin', 'admin');
+  await assertFails(scanSalida(as('mesero'), 'mesero', TOKEN2).commit());
 });
 
-test('un QR de entrada no sirve para registrar salida (y viceversa)', async () => {
+test('la salida solo la registra el dueño del registro y con su propio QR vigente', async () => {
   await seedOpen('mesero');
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(salidaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertFails(scanSalida(as('otro'), 'mesero', TOKEN).commit());
+  await seedQr(TOKEN2, 'admin', 'admin', { ageSeconds: 120 });
+  await assertFails(scanSalida(as('mesero'), 'mesero', TOKEN2).commit());
 });
 
-test('el QR de un trabajador no registra la asistencia de otro', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(entradaBatch(as('term1'), 'term1', 'otro', TOKEN).commit());
+test('un mismo QR no encadena dos marcaciones del mismo trabajador', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  await seedQr(TOKEN2, 'admin', 'admin');
+  await assertSucceeds(scanEntrada(as('mesero'), 'mesero', TOKEN).commit());
+  await assertFails(scanSalida(as('mesero'), 'mesero', TOKEN).commit());
+  await assertSucceeds(scanSalida(as('mesero'), 'mesero', TOKEN2).commit());
 });
 
-test('un trabajador dado de baja no puede marcar', async () => {
-  await seedToken(TOKEN, 'baja', 'entrada');
-  await assertFails(entradaBatch(as('term1'), 'term1', 'baja', TOKEN).commit());
+test('varias personas pueden escanear el mismo QR vigente', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  await assertSucceeds(scanEntrada(as('mesero'), 'mesero', TOKEN, 'asisM').commit());
+  await assertSucceeds(scanEntrada(as('otro'), 'otro', TOKEN, 'asisO').commit());
 });
 
-test('terminal revocada, admin y trabajador no pueden registrar', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(entradaBatch(as('termOff'), 'termOff', 'mesero', TOKEN).commit());
-  await assertFails(entradaBatch(as('super'), 'super', 'mesero', TOKEN).commit());
-  await assertFails(entradaBatch(as('mesero'), 'mesero', 'mesero', TOKEN).commit());
+test('la hora y los campos no pueden ser falseados', async () => {
+  await seedQr(TOKEN, 'admin', 'admin');
+  const db = as('mesero');
+  await assertFails(scanEntrada(db, 'mesero', TOKEN, 'asis1', { entrada: Timestamp.fromMillis(Date.now() - 3 * 3600_000) }).commit());
+  await assertFails(scanEntrada(db, 'mesero', TOKEN, 'asis1', { terminalId: 'term1' }).commit());
+  await assertFails(scanEntrada(db, 'mesero', TOKEN, 'asis1', { origen: 'regularizada' }).commit());
+  await assertFails(scanEntrada(db, 'mesero', TOKEN, 'asis1', { regularizada: true }).commit());
 });
 
-test('no se marca directamente desde un dispositivo personal', async () => {
+test('no se marca sin escanear un QR ni con el estado desajustado', async () => {
   const db = as('mesero');
   await assertFails(setDoc(doc(db, 'asistencias/x'), {
-    uid: 'mesero', entrada: serverTimestamp(), salida: null, origen: 'qr', terminalId: 'mesero', tokenId: TOKEN, regularizada: false,
+    uid: 'mesero', entrada: serverTimestamp(), salida: null, origen: 'qr', tokenId: TOKEN, regularizada: false,
   }));
-  await assertFails(setDoc(doc(db, 'estadoAsistencia/mesero'), { abierta: true, asistenciaId: 'x', actualizadoEn: serverTimestamp() }));
-});
-
-test('la hora no puede ser falseada por la terminal', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  const db = as('term1');
+  await assertFails(setDoc(doc(db, 'estadoAsistencia/mesero'), { abierta: true, asistenciaId: 'x', actualizadoEn: serverTimestamp(), tokenId: TOKEN }));
+  // Con un QR válido, el estado debe corresponder al registro creado en el mismo lote.
+  await seedQr(TOKEN, 'admin', 'admin');
   const b = writeBatch(db);
-  addProof(b, db, 'term1');
-  b.update(doc(db, `qrTokens/${TOKEN}`), { usadoEn: serverTimestamp(), terminalId: 'term1' });
-  b.set(doc(db, 'asistencias/asis1'), {
-    uid: 'mesero', entrada: Timestamp.fromMillis(Date.now() - 3 * 3600_000), salida: null, origen: 'qr', terminalId: 'term1', tokenId: TOKEN, regularizada: false,
-  });
-  b.set(doc(db, 'estadoAsistencia/mesero'), { abierta: true, asistenciaId: 'asis1', actualizadoEn: serverTimestamp() });
+  b.set(doc(db, 'asistencias/asis1'), { uid: 'mesero', entrada: serverTimestamp(), salida: null, origen: 'qr', tokenId: TOKEN, regularizada: false });
+  b.set(doc(db, 'estadoAsistencia/mesero'), { abierta: true, asistenciaId: 'otra', actualizadoEn: serverTimestamp(), tokenId: TOKEN });
   await assertFails(b.commit());
 });
 
-test('la terminal no puede leer perfiles ni listar tokens', async () => {
+// --- Sistema antiguo de terminales: retirado ---
+
+const OLD_COLLECTIONS = ['terminales', 'terminalClaves', 'terminalPruebas', 'solicitudesEliminacionTerminal'];
+
+test('las colecciones del sistema antiguo de terminales están cerradas a todos los clientes', async () => {
+  for (const uid of ['super', 'admin', 'mesero', 'caja', 'term1']) {
+    for (const col of OLD_COLLECTIONS) {
+      const db = as(uid);
+      await assertFails(getDoc(doc(db, `${col}/${uid === 'term1' ? 'term1' : 'x'}`)));
+      await assertFails(getDocs(collection(db, col)));
+      await assertFails(setDoc(doc(db, `${col}/${uid}`), { nombre: 'Tablet', activo: true }));
+      await assertFails(deleteDoc(doc(db, `${col}/term1`)));
+    }
+  }
+});
+
+test('una cuenta de terminal que aún exista no registra asistencia, no genera QR y no lee nada', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `qrTokens/${TOKEN}`), {
+      uid: 'mesero', tipo: 'entrada', nombreMostrar: 'Mario', creadoEn: Timestamp.now(), usadoEn: null, terminalId: null,
+    });
+  });
+  await assertFails(legacyTerminalBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
+  await assertFails(legacyTerminalBatch(as('termOff'), 'termOff', 'mesero', TOKEN).commit());
+  await assertFails(setDoc(doc(as('term1'), `qrTokens/${TOKEN2}`), newToken('term1', 'admin', { nombreMostrar: 'Tablet' })));
+  await seedOpen('mesero');
   await assertFails(getDoc(doc(as('term1'), 'usuarios/mesero')));
+  await assertFails(getDoc(doc(as('term1'), 'estadoAsistencia/mesero')));
+  await assertFails(getDoc(doc(as('term1'), 'asistencias/asis1')));
+  await assertFails(scanSalida(as('term1'), 'mesero', TOKEN2, 'asis1').commit());
 });
 
-// --- Administración de terminales ---
-
-function terminalBatch(db, actor, id, activo) {
+test('un perfil de personal sí puede crearse con cualquier UID: ya no hay cuentas de terminal reservadas', async () => {
+  const db = as('admin');
+  const data = staff({ nombres: 'Nuevo', numeroDocumento: '77777777', rol: 'mesero' });
   const b = writeBatch(db);
-  b.set(doc(db, 'auditoria/t1'), {
-    accion: 'autorizar_terminal', actorUid: actor, actorNombre: 'X', objetivo: id, campos: [], creadoEn: serverTimestamp(),
-  });
-  b.set(doc(db, `terminales/${id}`), {
-    nombre: 'Tablet salón', activo, autorizadoPor: actor, actualizadoEn: serverTimestamp(), ultimaAuditoriaId: 't1',
-  });
-  return b;
-}
-
-test('solo el superadmin autoriza y revoca terminales', async () => {
-  await assertFails(terminalBatch(as('admin'), 'admin', 'nueva', true).commit());
-  await assertSucceeds(terminalBatch(as('super'), 'super', 'nueva', true).commit());
-});
-
-
-// Inhabilitar / reactivar / eliminar (mismos lotes que usa la app).
-function disableBatch(db, actor, id) {
-  const b = writeBatch(db);
-  b.set(doc(db, 'auditoria/d1'), {
-    accion: 'revocar_terminal', actorUid: actor, actorNombre: 'X', objetivo: id, campos: [], creadoEn: serverTimestamp(),
-  });
-  b.set(doc(db, `terminales/${id}`), {
-    nombre: 'Tablet cocina', activo: false, autorizadoPor: actor, actualizadoEn: serverTimestamp(), ultimaAuditoriaId: 'd1',
-  });
-  b.delete(doc(db, `terminalClaves/${id}`));
-  return b;
-}
-
-// La app ya no elimina terminales: lo hace un script con Admin SDK.
-function deleteBatch(db, actor, id) {
-  const b = writeBatch(db);
-  b.delete(doc(db, `terminales/${id}`));
-  b.delete(doc(db, `terminalClaves/${id}`));
-  return b;
-}
-
-test('inhabilitar: solo el superadmin; la terminal pierde su autorización y su enlace', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(disableBatch(as('admin'), 'admin', 'term1').commit());
-  await assertFails(disableBatch(as('term1'), 'term1', 'term1').commit());
-  await assertSucceeds(disableBatch(as('super'), 'super', 'term1').commit());
-  // Con la terminal inhabilitada ya no registra, aunque tuviera el secreto.
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
-  // La auditoría y el resto de terminales quedan intactos.
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    const db = ctx.firestore();
-    if (!(await getDoc(doc(db, 'auditoria/d1'))).exists()) throw new Error('falta auditoría');
-    if (!(await getDoc(doc(db, 'terminalClaves/termOff'))).exists()) throw new Error('otro enlace afectado');
-    if ((await getDoc(doc(db, 'terminalClaves/term1'))).exists()) throw new Error('enlace no invalidado');
-  });
-});
-
-test('reactivar no recupera el enlace: hay que enlazar de nuevo', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertSucceeds(disableBatch(as('super'), 'super', 'term1').commit());
-  const db = as('super');
-  const b = writeBatch(db);
-  b.set(doc(db, 'auditoria/r1'), {
-    accion: 'autorizar_terminal', actorUid: 'super', actorNombre: 'X', objetivo: 'term1', campos: [], creadoEn: serverTimestamp(),
-  });
-  b.set(doc(db, 'terminales/term1'), {
-    nombre: 'Tablet cocina', activo: true, autorizadoPor: 'super', actualizadoEn: serverTimestamp(), ultimaAuditoriaId: 'r1',
-  });
+  b.set(doc(db, 'auditoria/z1'), { accion: 'crear_trabajador', actorUid: 'admin', actorNombre: 'X', objetivo: 'nuevo1', campos: [], creadoEn: serverTimestamp() });
+  b.set(doc(db, 'usuarios/nuevo1'), { ...data, ultimaAuditoriaId: 'z1', creadoEn: serverTimestamp(), creadoPor: 'admin', actualizadoEn: serverTimestamp() });
+  b.set(doc(db, 'documentos/77777777'), { uid: 'nuevo1', creadoEn: serverTimestamp() });
+  b.set(doc(db, `correos/${data.email}`), { uid: 'nuevo1', creadoEn: serverTimestamp() });
   await assertSucceeds(b.commit());
-  // Sin enlace vigente, la terminal reactivada aún no puede registrar.
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
-  // Se enlaza de nuevo con un secreto nuevo y entonces sí.
-  await assertSucceeds(setDoc(doc(as('term1'), 'terminalClaves/term1'), { clave: 'n'.repeat(40), creadoEn: serverTimestamp() }));
-  await assertSucceeds(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN, 'asis1', 'n'.repeat(40)).commit());
-});
-
-test('ningún cliente elimina terminales, ni el superadmin ni siendo inhabilitada', async () => {
-  const { deleteDoc } = require('firebase/firestore');
-  await assertFails(deleteBatch(as('super'), 'super', 'term1').commit()); // activa
-  await assertFails(deleteBatch(as('super'), 'super', 'termOff').commit()); // inhabilitada
-  await assertFails(deleteDoc(doc(as('super'), 'terminales/termOff')));
-  await assertFails(deleteBatch(as('admin'), 'admin', 'termOff').commit());
-  await assertFails(deleteDoc(doc(as('termOff'), 'terminales/termOff')));
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    const db = ctx.firestore();
-    if (!(await getDoc(doc(db, 'terminales/termOff'))).exists()) throw new Error('se eliminó');
-    if (!(await getDoc(doc(db, 'terminalClaves/termOff'))).exists()) throw new Error('se eliminó el enlace');
-  });
 });
 
 // --- Regularización ---
@@ -387,74 +412,4 @@ test('el trabajador crea solicitudes de corrección propias; solo quien regulari
   };
   await assertFails(resolver(as('admin'), 'admin').commit());
   await assertSucceeds(resolver(as('adminReg'), 'adminReg').commit());
-});
-
-// --- Credenciales copiadas / enlace con el dispositivo ---
-
-test('credenciales copiadas sin el secreto del dispositivo no pueden marcar', async () => {
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  // Ni con clave equivocada...
-  await assertFails(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN, 'asis1', 'x'.repeat(40)).commit());
-  // ...ni omitiendo la prueba.
-  const db = as('term1');
-  const b = writeBatch(db);
-  b.update(doc(db, `qrTokens/${TOKEN}`), { usadoEn: serverTimestamp(), terminalId: 'term1' });
-  b.set(doc(db, 'asistencias/asis1'), {
-    uid: 'mesero', entrada: serverTimestamp(), salida: null, origen: 'qr', terminalId: 'term1', tokenId: TOKEN, regularizada: false,
-  });
-  b.set(doc(db, 'estadoAsistencia/mesero'), { abierta: true, asistenciaId: 'asis1', actualizadoEn: serverTimestamp() });
-  await assertFails(b.commit());
-  // Con el secreto correcto sí.
-  await assertSucceeds(entradaBatch(as('term1'), 'term1', 'mesero', TOKEN).commit());
-});
-
-test('el secreto del dispositivo no se puede leer ni reemplazar', async () => {
-  await assertFails(getDoc(doc(as('term1'), 'terminalClaves/term1')));
-  await assertFails(getDoc(doc(as('super'), 'terminalClaves/term1')));
-  await assertFails(setDoc(doc(as('term1'), 'terminalClaves/term1'), { clave: 'n'.repeat(40), creadoEn: serverTimestamp() }));
-  await assertFails(getDoc(doc(as('term1'), 'terminalPruebas/term1')));
-});
-
-test('enlace inicial: la terminal registra su secreto una sola vez', async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'terminales/term2'), { nombre: 'Nueva', activo: true });
-  });
-  await assertFails(setDoc(doc(as('term2'), 'terminalClaves/term2'), { clave: 'corta', creadoEn: serverTimestamp() }));
-  await assertFails(setDoc(doc(as('term1'), 'terminalClaves/term2'), { clave: KEY, creadoEn: serverTimestamp() }));
-  await assertSucceeds(setDoc(doc(as('term2'), 'terminalClaves/term2'), { clave: KEY, creadoEn: serverTimestamp() }));
-  await assertFails(setDoc(doc(as('term2'), 'terminalClaves/term2'), { clave: 'z'.repeat(40), creadoEn: serverTimestamp() }));
-});
-
-test('solo el superadmin restablece el enlace de una terminal', async () => {
-  const { deleteDoc } = require('firebase/firestore');
-  await assertFails(deleteDoc(doc(as('admin'), 'terminalClaves/term1')));
-  await assertFails(deleteDoc(doc(as('term1'), 'terminalClaves/term1')));
-  await assertSucceeds(deleteDoc(doc(as('super'), 'terminalClaves/term1')));
-});
-
-// --- Cuentas de personal y de terminal no se mezclan ---
-
-test('una cuenta con perfil de personal nunca actúa como terminal', async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    const db = ctx.firestore();
-    await setDoc(doc(db, 'terminales/otro'), { nombre: 'Mal creada', activo: true });
-    await setDoc(doc(db, 'terminalClaves/otro'), { clave: KEY });
-  });
-  await seedToken(TOKEN, 'mesero', 'entrada');
-  await assertFails(entradaBatch(as('otro'), 'otro', 'mesero', TOKEN).commit());
-});
-
-test('no se registra como terminal una cuenta que ya es personal', async () => {
-  await assertFails(terminalBatch(as('super'), 'super', 'mesero', true).commit());
-});
-
-test('no se crea un perfil de personal sobre la cuenta de una terminal', async () => {
-  const db = as('admin');
-  const data = staff({ nombres: 'Nuevo', numeroDocumento: '77777777', rol: 'mesero' });
-  const b = writeBatch(db);
-  b.set(doc(db, 'auditoria/z1'), { accion: 'crear_trabajador', actorUid: 'admin', actorNombre: 'X', objetivo: 'term1', campos: [], creadoEn: serverTimestamp() });
-  b.set(doc(db, 'usuarios/term1'), { ...data, ultimaAuditoriaId: 'z1', creadoEn: serverTimestamp(), creadoPor: 'admin', actualizadoEn: serverTimestamp() });
-  b.set(doc(db, 'documentos/77777777'), { uid: 'term1', creadoEn: serverTimestamp() });
-  b.set(doc(db, `correos/${data.email}`), { uid: 'term1', creadoEn: serverTimestamp() });
-  await assertFails(b.commit());
 });

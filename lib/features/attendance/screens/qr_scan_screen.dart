@@ -5,49 +5,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../core/time/lima_time.dart';
-import '../../auth/controllers/auth_controller.dart';
 import '../../auth/controllers/auth_providers.dart';
 import '../../auth/models/session_state.dart';
 import '../controllers/attendance_providers.dart';
-import '../services/terminal_binding.dart';
 import '../services/attendance_services.dart';
+import '../services/scan_validator.dart';
 
-/// `/asistencia/terminal`: la tablet del restaurante, con una sola cámara.
-/// Escanea el QR de entrada o salida, lo valida contra el servidor y muestra
-/// la confirmación. Solo cuentas de terminal autorizadas llegan aquí.
-class TerminalScreen extends ConsumerStatefulWidget {
-  const TerminalScreen({super.key});
+/// Escáner de asistencia (Mesero, Cocina y Cajero): abre la cámara, lee el QR
+/// de un generador autorizado y registra la propia entrada o salida. No hay
+/// selección manual: la jornada decide si es entrada o salida.
+class QrScanScreen extends ConsumerStatefulWidget {
+  const QrScanScreen({super.key});
 
   @override
-  ConsumerState<TerminalScreen> createState() => _TerminalScreenState();
+  ConsumerState<QrScanScreen> createState() => _QrScanScreenState();
 }
 
-class _TerminalScreenState extends ConsumerState<TerminalScreen> {
+class _QrScanScreenState extends ConsumerState<QrScanScreen> {
   static const _resultDuration = Duration(seconds: 4);
 
-  final _controller = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode],
-    detectionSpeed: DetectionSpeed.noDuplicates,
-  );
+  MobileScannerController? _controller;
   bool _busy = false;
   ScanResult? _result;
   Timer? _clearTimer;
 
+  MobileScannerController get _scanner => _controller ??=
+      MobileScannerController(
+        formats: const [BarcodeFormat.qrCode],
+        detectionSpeed: DetectionSpeed.noDuplicates,
+      );
+
   @override
   void dispose() {
     _clearTimer?.cancel();
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
-  Future<void> _onDetect(BarcodeCapture capture, String terminalUid) async {
+  Future<void> _onDetect(BarcodeCapture capture, Authenticated session) async {
     if (_busy) return;
     final raw = capture.barcodes.firstOrNull?.rawValue;
     if (raw == null) return;
     setState(() => _busy = true);
     final result = await ref
-        .read(terminalScanServiceProvider)
-        .process(raw, terminalUid: terminalUid);
+        .read(attendanceScanServiceProvider)
+        .process(raw, scanner: session.user);
     if (!mounted) return;
     setState(() => _result = result);
     _clearTimer?.cancel();
@@ -64,51 +66,34 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider).value;
-    if (session is! TerminalAuthenticated) return const SizedBox.shrink();
-    final terminal = session.terminal;
-    final binding = ref.watch(terminalBindingProvider(terminal.uid));
+    if (session is! Authenticated) return const SizedBox.shrink();
+    // Defensa de interfaz: servicio y reglas de Firestore también lo impiden.
+    if (!const QrPolicy().canScan(session.user.role)) {
+      return const Center(
+        child: Text('Tu rol no registra asistencia con QR.'),
+      );
+    }
+    final open = ref.watch(myStateProvider(session.user.uid)).value?.abierta;
+    final next = open == true ? 'salida' : 'entrada';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Asistencia · ${terminal.nombre}'),
-        actions: [
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout),
-            onPressed: () =>
-                ref.read(authControllerProvider.notifier).signOut(),
-          ),
-        ],
-      ),
-      body: switch (binding) {
-        AsyncData(value: DeviceBound()) => _scanner(terminal.uid),
-        AsyncData(value: DeviceNotBound(:final message)) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(message, textAlign: TextAlign.center),
-          ),
-        ),
-        AsyncError() => const Center(
-          child: Text('No se pudo enlazar la terminal. Revisa la conexión.'),
-        ),
-        _ => const Center(child: CircularProgressIndicator()),
-      },
-    );
-  }
-
-  Widget _scanner(String terminalUid) {
     return Stack(
       fit: StackFit.expand,
       children: [
         MobileScanner(
-          controller: _controller,
-          onDetect: (c) => _onDetect(c, terminalUid),
+          controller: _scanner,
+          onDetect: (c) => _onDetect(c, session),
           errorBuilder: (context, error) => Center(
             child: Text('No se pudo usar la cámara: ${error.errorCode.name}'),
           ),
         ),
         if (_result == null)
-          const Align(alignment: Alignment.bottomCenter, child: _Hint())
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: _Hint(
+              'Escanea el QR de asistencia. Se registrará tu $next '
+              'automáticamente.',
+            ),
+          )
         else
           _ResultPanel(result: _result!),
       ],
@@ -117,17 +102,19 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 }
 
 class _Hint extends StatelessWidget {
-  const _Hint();
+  const _Hint(this.text);
+
+  final String text;
 
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
     color: Colors.black54,
     padding: const EdgeInsets.all(16),
-    child: const Text(
-      'Muestra tu QR de entrada o salida frente a la cámara.',
+    child: Text(
+      text,
       textAlign: TextAlign.center,
-      style: TextStyle(color: Colors.white, fontSize: 18),
+      style: const TextStyle(color: Colors.white, fontSize: 18),
     ),
   );
 }
@@ -145,7 +132,7 @@ class _ResultPanel extends StatelessWidget {
         ? '${result.type!.label} registrada'
         : 'No se pudo registrar';
     final detail = ok
-        ? '${result.name}\n${LimaTime.formatDateTime(result.at!)}'
+        ? LimaTime.formatDateTime(result.at!)
         : result.message;
     return ColoredBox(
       color: color.withValues(alpha: 0.94),

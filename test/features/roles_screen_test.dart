@@ -23,7 +23,7 @@ void main() {
     'muestra la matriz del rol elegido y su condición de asistencia',
     (tester) async {
       await pump(tester);
-      // Mesero por defecto: requiere entrada; ve pedidos pero no terminales.
+      // Mesero por defecto: requiere entrada; ve pedidos y nadie ve «Terminales».
       expect(find.text('Requiere entrada'), findsOneWidget);
       expect(find.text('Pedidos'), findsOneWidget);
       expect(find.text('Terminales'), findsNothing);
@@ -37,7 +37,7 @@ void main() {
       await tester.tap(find.text('Superadministrador'));
       await tester.pumpAndSettle();
       expect(find.text('Exento'), findsOneWidget);
-      expect(find.text('Terminales'), findsOneWidget);
+      expect(find.text('Terminales'), findsNothing);
       expect(find.text('Auditoría'), findsOneWidget);
     },
   );

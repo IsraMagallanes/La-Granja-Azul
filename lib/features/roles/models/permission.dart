@@ -1,5 +1,5 @@
 /// Acciones sobre un módulo. `special` agrupa lo que no es CRUD (asignar
-/// administradores, solicitar la eliminación definitiva de una terminal...).
+/// administradores....).
 enum PermissionAction {
   read('Ver'),
   create('Crear'),
@@ -28,7 +28,8 @@ enum AppModule {
   reports('Reportes'),
   attendance('Asistencia (administración)'),
   selfAttendance('Mi asistencia'),
-  terminals('Terminales'),
+  qrGenerate('Generar QR de asistencia'),
+  qrScan('Escanear QR de asistencia'),
   restrictions('Restricciones'),
   audit('Auditoría');
 
@@ -63,7 +64,11 @@ enum Permission {
   viewReports(AppModule.reports, PermissionAction.read),
   manageAttendance(AppModule.attendance, PermissionAction.read),
   ownAttendance(AppModule.selfAttendance, PermissionAction.read),
-  manageTerminals(AppModule.terminals, PermissionAction.read),
+  // Mostrar el QR de asistencia: solo Superadmin, Admin y Cajero.
+  generateAttendanceQr(AppModule.qrGenerate, PermissionAction.create),
+  // Escanear el QR con la cámara y registrar la propia entrada o salida:
+  // Mesero, Cocina y Cajero.
+  scanAttendanceQr(AppModule.qrScan, PermissionAction.create),
   // Administrar restricciones (crear/levantar). Ver su estado lo puede el
   // Admin sin acceso a la pantalla (aviso informativo al contratar).
   manageRestrictions(AppModule.restrictions, PermissionAction.update),

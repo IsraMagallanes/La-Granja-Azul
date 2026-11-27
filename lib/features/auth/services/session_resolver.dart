@@ -1,4 +1,3 @@
-import '../../attendance/models/attendance_models.dart';
 import '../../users/models/app_user.dart';
 import '../models/session_state.dart';
 
@@ -16,20 +15,5 @@ abstract final class SessionResolver {
     if (!user.activo) return const AccessDenied(AccessDeniedReason.inactive);
     if (!emailVerified) return EmailUnverified(user);
     return Authenticated(user, onShift: onShift);
-  }
-
-  /// Una cuenta sin perfil de personal puede ser una terminal autorizada
-  /// (las terminales son cuentas de dispositivo, sin verificación de correo).
-  static SessionState fromAccount(
-    AppUser? user,
-    AttendanceTerminal? terminal, {
-    bool emailVerified = true,
-  }) {
-    if (user != null) return fromProfile(user, emailVerified: emailVerified);
-    if (terminal == null) return fromProfile(null);
-    if (!terminal.activo) {
-      return const AccessDenied(AccessDeniedReason.terminalRevoked);
-    }
-    return TerminalAuthenticated(terminal);
   }
 }

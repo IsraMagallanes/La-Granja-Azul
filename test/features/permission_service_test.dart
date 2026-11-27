@@ -49,13 +49,13 @@ void main() {
       Permission.viewReports,
       Permission.manageAttendance,
       Permission.ownAttendance,
+      Permission.generateAttendanceQr,
     };
     expect(service.permissionsOf(UserRole.admin), adminPermissions);
     expect(service.permissionsOf(UserRole.superadmin), {
       ...adminPermissions,
       Permission.manageAdmins,
       Permission.manageRoles,
-      Permission.manageTerminals,
       Permission.manageRestrictions,
       Permission.viewAudit,
     });
@@ -67,12 +67,14 @@ void main() {
       Permission.manageReservations,
       Permission.manageUtensils,
       Permission.ownAttendance,
+      Permission.scanAttendanceQr,
     });
     expect(service.permissionsOf(UserRole.cocina), {
       Permission.useKitchen,
       Permission.manageSupplies,
       Permission.viewOrders,
       Permission.ownAttendance,
+      Permission.scanAttendanceQr,
     });
     expect(service.permissionsOf(UserRole.cajero), {
       Permission.useCashier,
@@ -80,6 +82,8 @@ void main() {
       Permission.viewTables,
       Permission.viewReservations,
       Permission.ownAttendance,
+      Permission.generateAttendanceQr,
+      Permission.scanAttendanceQr,
     });
   });
 
@@ -88,7 +92,13 @@ void main() {
       for (final role in UserRole.values) {
         for (final module in AppModule.values) {
           final actions = service.actionsOf(role, module);
-          if (actions.isNotEmpty && module != AppModule.restrictions) {
+          // Restricciones y QR de asistencia son módulos de una sola acción.
+          const actionOnly = {
+            AppModule.restrictions,
+            AppModule.qrGenerate,
+            AppModule.qrScan,
+          };
+          if (actions.isNotEmpty && !actionOnly.contains(module)) {
             expect(
               actions,
               contains(PermissionAction.read),
@@ -107,17 +117,9 @@ void main() {
       }
     });
 
-    test('solo el Superadmin crea o edita terminales, restricciones y asigna admins', () {
+    test('solo el Superadmin crea o edita restricciones y asigna admins', () {
       for (final role in UserRole.values) {
         final isSuper = role == UserRole.superadmin;
-        expect(
-          service.canDo(role, AppModule.terminals, PermissionAction.create),
-          isSuper,
-        );
-        expect(
-          service.canDo(role, AppModule.terminals, PermissionAction.special),
-          isSuper,
-        );
         expect(
           service.canDo(role, AppModule.restrictions, PermissionAction.update),
           isSuper,
@@ -151,7 +153,7 @@ void main() {
       }
     });
 
-    test('todos los roles generan su asistencia y ven la propia', () {
+    test('todos los roles ven su propia asistencia; nadie genera QR desde ahí', () {
       for (final role in UserRole.values) {
         expect(
           service.canDo(role, AppModule.selfAttendance, PermissionAction.read),
@@ -163,7 +165,24 @@ void main() {
             AppModule.selfAttendance,
             PermissionAction.create,
           ),
-          isTrue,
+          isFalse,
+        );
+      }
+    });
+
+    test('generar QR: Superadmin, Admin y Cajero; escanear: Mesero, Cocina y Cajero', () {
+      const generators = {UserRole.superadmin, UserRole.admin, UserRole.cajero};
+      const scanners = {UserRole.mesero, UserRole.cocina, UserRole.cajero};
+      for (final role in UserRole.values) {
+        expect(
+          service.canDo(role, AppModule.qrGenerate, PermissionAction.create),
+          generators.contains(role),
+          reason: role.name,
+        );
+        expect(
+          service.canDo(role, AppModule.qrScan, PermissionAction.create),
+          scanners.contains(role),
+          reason: role.name,
         );
       }
     });

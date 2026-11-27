@@ -68,14 +68,20 @@ enum AppRoute {
   myAttendance(
     '/app/mi-asistencia',
     'Mi asistencia',
-    Icons.qr_code_2,
+    Icons.history,
     Permission.ownAttendance,
   ),
-  terminals(
-    '/app/terminales',
-    'Terminales',
-    Icons.tablet_android,
-    Permission.manageTerminals,
+  generateQr(
+    '/app/generar-qr',
+    'Generar QR',
+    Icons.qr_code_2,
+    Permission.generateAttendanceQr,
+  ),
+  scanQr(
+    '/app/escanear-asistencia',
+    'Escanear asistencia',
+    Icons.qr_code_scanner,
+    Permission.scanAttendanceQr,
   ),
   restrictions(
     '/app/restricciones',
@@ -84,9 +90,7 @@ enum AppRoute {
     Permission.manageRestrictions,
   ),
   audit('/app/auditoria', 'Auditoría', Icons.history, Permission.viewAudit),
-
-  // Terminal de asistencia del restaurante (cuenta de dispositivo, no personal).
-  attendanceTerminal('/asistencia/terminal');
+;
 
   const AppRoute(this.path, [this.label, this.icon, this.permission]);
 

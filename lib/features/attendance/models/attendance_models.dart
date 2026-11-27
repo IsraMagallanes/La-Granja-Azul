@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import '../../roles/models/user_role.dart';
+
 DateTime? _toDate(Object? raw) {
   if (raw is DateTime) return raw;
   if (raw == null) return null;
@@ -29,61 +31,77 @@ enum PunchType {
   }
 }
 
-/// Token efímero de un QR (`qrTokens/{id}`). El QR solo contiene su id.
+/// Token efímero de un QR de asistencia (`qrTokens/{id}`). Lo genera un
+/// Superadmin, Admin o Cajero y lo escanea el personal; el QR solo contiene su
+/// id. No identifica a quien escanea: la entrada o salida es de quien lo lee.
 class QrToken extends Equatable {
   const QrToken({
     required this.id,
-    required this.uid,
-    required this.tipo,
+    required this.generadorUid,
+    required this.generadorRol,
     required this.nombreMostrar,
     required this.creadoEn,
-    required this.usadoEn,
   });
 
   /// Vigencia del QR; debe coincidir con `firestore.rules`.
   static const lifetime = Duration(seconds: 45);
 
   final String id;
-  final String uid;
-  final PunchType tipo;
+  final String generadorUid;
+  final UserRole generadorRol;
   final String nombreMostrar;
   final DateTime? creadoEn;
-  final DateTime? usadoEn;
 
-  bool get used => usadoEn != null;
+  /// ¿Venció a la hora [now]? (Informativo: la vigencia real la decide el
+  /// servidor.)
+  bool isExpiredAt(DateTime now) =>
+      creadoEn == null || !creadoEn!.add(lifetime).isAfter(now);
 
   static QrToken? fromMap(String id, Map<String, dynamic> data) {
-    final tipo = PunchType.tryParse(data['tipo']);
-    final uid = data['uid'];
-    if (tipo == null || uid is! String) return null;
+    final rol = UserRole.tryParse(data['generadorRol']);
+    final uid = data['generadorUid'];
+    if (rol == null || uid is! String) return null;
     return QrToken(
       id: id,
-      uid: uid,
-      tipo: tipo,
+      generadorUid: uid,
+      generadorRol: rol,
       nombreMostrar: (data['nombreMostrar'] as String?) ?? '',
       creadoEn: _toDate(data['creadoEn']),
-      usadoEn: _toDate(data['usadoEn']),
     );
   }
 
   @override
-  List<Object?> get props => [id, uid, tipo, nombreMostrar, creadoEn, usadoEn];
+  List<Object?> get props => [
+    id,
+    generadorUid,
+    generadorRol,
+    nombreMostrar,
+    creadoEn,
+  ];
 }
 
 /// Estado de jornada de un trabajador (`estadoAsistencia/{uid}`).
 class AttendanceState extends Equatable {
-  const AttendanceState({required this.abierta, this.asistenciaId});
+  const AttendanceState({
+    required this.abierta,
+    this.asistenciaId,
+    this.tokenId,
+  });
 
   final bool abierta;
   final String? asistenciaId;
 
+  /// Último QR con el que este trabajador marcó (no se encadena dos veces).
+  final String? tokenId;
+
   static AttendanceState fromMap(Map<String, dynamic> data) => AttendanceState(
     abierta: data['abierta'] == true,
     asistenciaId: data['asistenciaId'] as String?,
+    tokenId: data['tokenId'] as String?,
   );
 
   @override
-  List<Object?> get props => [abierta, asistenciaId];
+  List<Object?> get props => [abierta, asistenciaId, tokenId];
 }
 
 enum AttendanceOrigin {
@@ -155,29 +173,6 @@ class AttendanceRecord extends Equatable {
     regularizada,
     motivo,
   ];
-}
-
-/// Terminal autorizada (`terminales/{uid}`).
-class AttendanceTerminal extends Equatable {
-  const AttendanceTerminal({
-    required this.uid,
-    required this.nombre,
-    required this.activo,
-  });
-
-  final String uid;
-  final String nombre;
-  final bool activo;
-
-  static AttendanceTerminal fromMap(String uid, Map<String, dynamic> data) =>
-      AttendanceTerminal(
-        uid: uid,
-        nombre: (data['nombre'] as String?) ?? '',
-        activo: data['activo'] == true,
-      );
-
-  @override
-  List<Object?> get props => [uid, nombre, activo];
 }
 
 enum CorrectionStatus {

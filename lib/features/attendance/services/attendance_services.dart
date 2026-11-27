@@ -4,7 +4,6 @@ import '../../../core/error/app_failure.dart';
 import '../../../core/error/error_mapper.dart';
 import '../../../core/validators/validators.dart';
 import '../../roles/models/user_role.dart';
-import '../../staff/repositories/staff_repository.dart';
 import '../../users/models/app_user.dart';
 import '../models/attendance_models.dart';
 import '../models/schedule.dart';
@@ -12,9 +11,8 @@ import '../repositories/attendance_repositories.dart';
 import 'qr_payload.dart';
 import 'regularization.dart';
 import 'scan_validator.dart';
-import 'terminal_binding.dart';
 
-/// QR emitido para el trabajador. Generarlo NO registra asistencia.
+/// QR mostrado por un generador. Generarlo NO registra asistencia de nadie.
 class IssuedQr {
   const IssuedQr({
     required this.payload,
@@ -31,41 +29,43 @@ class IssuedQr {
   final DateTime expiresAt;
 }
 
-/// App del trabajador.
-class QrIssueService {
-  const QrIssueService(this._repo, {this._random});
+/// Generación del QR de asistencia: solo Superadmin, Admin y Cajero.
+class QrGenerationService {
+  const QrGenerationService(
+    this._repo, {
+    this._policy = const QrPolicy(),
+    this._random,
+  });
 
-  final WorkerAttendanceRepository _repo;
+  final QrGenerationRepository _repo;
+  final QrPolicy _policy;
   final Random? _random;
 
   Future<IssuedQr> issue(
-    AppUser worker,
-    PunchType type, {
-    required AttendanceState? state,
+    AppUser generator, {
     DateTime Function() clock = DateTime.now,
   }) async {
-    final open = state?.abierta ?? false;
-    if (type == PunchType.entrada && open) {
-      throw const AppFailure(
-        'Ya tienes una entrada abierta. Genera el QR de salida.',
-      );
+    if (!_policy.canGenerate(generator.role)) {
+      throw const AppFailure('Tu rol no puede generar el QR de asistencia.');
     }
-    if (type == PunchType.salida && !open) {
-      throw const AppFailure(
-        'No tienes una entrada abierta para registrar salida.',
-      );
-    }
-    if (!worker.activo) {
+    if (!generator.activo) {
       throw const AppFailure('Tu cuenta no está activa.');
     }
     final id = QrPayload.generateId(_random);
-    final token = await _repo.createToken(worker, type, id);
+    final token = await _repo.createToken(generator, id);
     return IssuedQr(
       payload: QrPayload.encode(token.id),
       token: token,
       expiresAt: clock().add(QrToken.lifetime),
     );
   }
+}
+
+/// Acciones del personal sobre su propia asistencia.
+class AttendanceSelfService {
+  const AttendanceSelfService(this._repo);
+
+  final WorkerAttendanceRepository _repo;
 
   Future<void> requestCorrection({
     required AppUser worker,
@@ -90,7 +90,7 @@ class QrIssueService {
 class ScanResult {
   const ScanResult.ok({
     required this.type,
-    required this.name,
+    required this.generator,
     required this.at,
   }) : success = true,
        message = '';
@@ -98,55 +98,62 @@ class ScanResult {
   const ScanResult.failed(this.message)
     : success = false,
       type = null,
-      name = '',
+      generator = '',
       at = null;
 
   final bool success;
   final String message;
   final PunchType? type;
-  final String name;
+
+  /// Nombre de quien mostró el QR.
+  final String generator;
 
   /// Hora del servidor.
   final DateTime? at;
 }
 
-/// Terminal del restaurante: lee el QR, identifica entrada o salida y registra
-/// solo después de que el servidor lo valida.
-class TerminalScanService {
-  const TerminalScanService(
-    this._repo,
-    this._keys, {
+/// Escaneo del QR por el personal: identifica entrada o salida según su
+/// jornada y registra solo después de que el servidor lo valida.
+class AttendanceScanService {
+  const AttendanceScanService(
+    this._repo, {
     this._validator = const ScanValidator(),
   });
 
-  final TerminalScanRepository _repo;
-  final DeviceKeyStore _keys;
+  final QrScanRepository _repo;
   final ScanValidator _validator;
 
-  Future<ScanResult> process(String? raw, {required String terminalUid}) async {
+  Future<ScanResult> process(
+    String? raw, {
+    required AppUser scanner,
+    DateTime Function() clock = DateTime.now,
+  }) async {
     final tokenId = QrPayload.decode(raw);
     if (tokenId == null) return const ScanResult.failed('QR no válido.');
-    final deviceKey = await _keys.read(terminalUid);
-    if (deviceKey == null) {
-      return const ScanResult.failed(
-        'Esta tablet no está enlazada a la terminal. Inicia sesión de nuevo.',
-      );
+    if (!scanner.activo) {
+      return const ScanResult.failed('Tu cuenta no está activa.');
     }
     try {
       final token = await _repo.fetchToken(tokenId);
-      final state = token == null ? null : await _repo.fetchState(token.uid);
-      final decision = _validator.evaluate(token: token, state: state);
+      final state = await _repo.fetchState(scanner.uid);
+      final decision = _validator.evaluate(
+        token: token,
+        scannerRole: scanner.role,
+        scannerUid: scanner.uid,
+        now: clock(),
+        state: state,
+      );
       if (decision is ScanRejected) return ScanResult.failed(decision.message);
       final ok = decision as ScanProceed;
       final at = await _repo.commit(
         token: ok.token,
+        uid: scanner.uid,
+        type: ok.type,
         state: state,
-        terminalUid: terminalUid,
-        deviceKey: deviceKey,
       );
       return ScanResult.ok(
-        type: ok.token.tipo,
-        name: ok.token.nombreMostrar,
+        type: ok.type,
+        generator: ok.token.nombreMostrar,
         at: at,
       );
     } catch (e) {
@@ -154,97 +161,17 @@ class TerminalScanService {
     }
   }
 
-  /// El servidor rechazó la escritura (o falló la red). Intenta dar el motivo
-  /// más claro: QR ya usado, vencido, trabajador inactivo, etc.
+  /// El servidor rechazó la escritura (o falló la red). Da el motivo más claro.
   Future<String> _explain(Object error, String tokenId) async {
     final mapped = ErrorMapper.map(error);
     if (mapped.code != 'permission-denied') return mapped.message;
     try {
-      final token = await _repo.fetchToken(tokenId);
-      if (token == null) return 'QR no válido.';
-      if (token.used) return 'Este QR ya fue utilizado.';
+      if (await _repo.fetchToken(tokenId) == null) return 'QR no válido.';
     } catch (_) {
       // Sin detalle adicional.
     }
-    return 'El servidor rechazó el QR: venció (45 s), no es válido o el '
-        'trabajador no está activo.';
-  }
-}
-
-/// Administración de terminales (solo Superadmin).
-class TerminalAdminService {
-  const TerminalAdminService(this._repo, this._accounts);
-
-  final TerminalRepository _repo;
-  final StaffAccountCreator _accounts;
-
-  Future<void> register(
-    AppUser actor, {
-    required String nombre,
-    required String email,
-    required String password,
-  }) async {
-    _ensureSuper(actor);
-    if (nombre.trim().length < 2) {
-      throw const AppFailure('Indica el nombre de la terminal.');
-    }
-    final mail = Validators.email(email);
-    if (mail != null) throw AppFailure(mail);
-    if (password.length < 10) {
-      throw const AppFailure(
-        'La contraseña de la terminal debe tener al menos 10 caracteres.',
-      );
-    }
-    final account = await _accounts.createAccount(
-      email.trim().toLowerCase(),
-      password: password,
-    );
-    try {
-      await _repo.authorize(actor, nombre: nombre, uid: account.uid);
-    } catch (_) {
-      await account.rollback();
-      rethrow;
-    }
-    await account.commit();
-  }
-
-  Future<void> setActive(
-    AppUser actor,
-    AttendanceTerminal terminal, {
-    required bool active,
-  }) async {
-    _ensureSuper(actor);
-    await _repo.setActive(actor, terminal, active: active);
-  }
-
-  Future<void> resetDeviceLink(
-    AppUser actor,
-    AttendanceTerminal terminal,
-  ) async {
-    _ensureSuper(actor);
-    await _repo.resetDeviceLink(actor, terminal);
-  }
-
-  /// Solicita la eliminación definitiva de una terminal inhabilitada. No borra
-  /// nada: deja una solicitud auditada que el propietario procesa con
-  /// `tools/delete_terminal.js` (la app no puede eliminar cuentas de Auth).
-  Future<void> requestDeletion(
-    AppUser actor,
-    AttendanceTerminal terminal,
-  ) async {
-    _ensureSuper(actor);
-    if (terminal.activo) {
-      throw const AppFailure(
-        'Inhabilita la terminal antes de solicitar su eliminación.',
-      );
-    }
-    await _repo.requestDeletion(actor, terminal);
-  }
-
-  void _ensureSuper(AppUser actor) {
-    if (actor.role != UserRole.superadmin) {
-      throw const AppFailure('Solo el Superadmin administra terminales.');
-    }
+    return 'El servidor rechazó el QR: venció (45 s), no corresponde a tu rol '
+        'o tu cuenta no está activa.';
   }
 }
 

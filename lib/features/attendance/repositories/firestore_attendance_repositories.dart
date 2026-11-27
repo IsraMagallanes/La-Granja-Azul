@@ -20,36 +20,6 @@ class FirestoreWorkerAttendanceRepository
   final FirebaseFirestore _db;
 
   @override
-  Future<QrToken> createToken(
-    AppUser worker,
-    PunchType type,
-    String tokenId,
-  ) async {
-    final ref = _col(_db, FirestorePaths.qrTokens).doc(tokenId);
-    // `nombreMostrar` (solo nombres de pila) lo valida la regla contra el
-    // perfil; el QR en sí únicamente contiene el id del token.
-    await ref.set({
-      'uid': worker.uid,
-      'tipo': type.value,
-      'nombreMostrar': worker.nombres,
-      'creadoEn': FieldValue.serverTimestamp(),
-      'usadoEn': null,
-      'terminalId': null,
-    });
-    final snap = await ref.get();
-    return QrToken.fromMap(tokenId, snap.data()!)!;
-  }
-
-  @override
-  Stream<QrToken?> watchToken(String tokenId) =>
-      _col(_db, FirestorePaths.qrTokens)
-          .doc(tokenId)
-          .snapshots()
-          .map(
-            (d) => d.data() == null ? null : QrToken.fromMap(d.id, d.data()!),
-          );
-
-  @override
   Stream<AttendanceState?> watchState(String uid) =>
       _col(_db, FirestorePaths.estadoAsistencia)
           .doc(uid)
@@ -98,8 +68,29 @@ List<AttendanceRecord> _records(QuerySnapshot<Map<String, dynamic>> s) => [
   for (final d in s.docs) ?AttendanceRecord.fromMap(d.id, d.data()),
 ];
 
-class FirestoreTerminalScanRepository implements TerminalScanRepository {
-  FirestoreTerminalScanRepository(this._db);
+class FirestoreQrGenerationRepository implements QrGenerationRepository {
+  FirestoreQrGenerationRepository(this._db);
+
+  final FirebaseFirestore _db;
+
+  @override
+  Future<QrToken> createToken(AppUser generator, String tokenId) async {
+    final ref = _col(_db, FirestorePaths.qrTokens).doc(tokenId);
+    // `nombreMostrar` (solo nombres de pila) y `generadorRol` los valida la
+    // regla contra el perfil; el QR en sí únicamente contiene el id del token.
+    await ref.set({
+      'generadorUid': generator.uid,
+      'generadorRol': generator.role.value,
+      'nombreMostrar': generator.nombres,
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
+    final snap = await ref.get();
+    return QrToken.fromMap(tokenId, snap.data()!)!;
+  }
+}
+
+class FirestoreQrScanRepository implements QrScanRepository {
+  FirestoreQrScanRepository(this._db);
 
   final FirebaseFirestore _db;
 
@@ -121,52 +112,38 @@ class FirestoreTerminalScanRepository implements TerminalScanRepository {
   }
 
   @override
-  Future<void> enroll({required String terminalUid, required String key}) =>
-      _col(_db, FirestorePaths.terminalClaves).doc(terminalUid).set({
-        'clave': key,
-        'creadoEn': FieldValue.serverTimestamp(),
-      });
-
-  @override
   Future<DateTime> commit({
     required QrToken token,
+    required String uid,
+    required PunchType type,
     required AttendanceState? state,
-    required String terminalUid,
-    required String deviceKey,
   }) async {
-    final tokenRef = _col(_db, FirestorePaths.qrTokens).doc(token.id);
-    final stateRef = _col(_db, FirestorePaths.estadoAsistencia).doc(token.uid);
+    final stateRef = _col(_db, FirestorePaths.estadoAsistencia).doc(uid);
     final records = _col(_db, FirestorePaths.asistencias);
     final batch = _db.batch();
+    final String recordId;
 
-    // Un único lote: token consumido + registro + estado, todos con la hora
-    // del servidor. Si cualquier regla falla, no se escribe nada.
-    batch.set(_col(_db, FirestorePaths.terminalPruebas).doc(terminalUid), {
-      'clave': deviceKey,
-      'actualizadoEn': FieldValue.serverTimestamp(),
-    });
-    batch.update(tokenRef, {
-      'usadoEn': FieldValue.serverTimestamp(),
-      'terminalId': terminalUid,
-    });
-    if (token.tipo == PunchType.entrada) {
+    // Un único lote: registro + estado, con la hora del servidor. Si cualquier
+    // regla falla, no se escribe nada.
+    if (type == PunchType.entrada) {
       final recordRef = records.doc();
+      recordId = recordRef.id;
       batch.set(recordRef, {
-        'uid': token.uid,
+        'uid': uid,
         'entrada': FieldValue.serverTimestamp(),
         'salida': null,
         'origen': AttendanceOrigin.qr.value,
-        'terminalId': terminalUid,
         'tokenId': token.id,
         'regularizada': false,
       });
       batch.set(stateRef, {
         'abierta': true,
-        'asistenciaId': recordRef.id,
+        'asistenciaId': recordId,
         'actualizadoEn': FieldValue.serverTimestamp(),
+        'tokenId': token.id,
       });
     } else {
-      final recordId = state!.asistenciaId!;
+      recordId = state!.asistenciaId!;
       batch.update(records.doc(recordId), {
         'salida': FieldValue.serverTimestamp(),
         'salidaTokenId': token.id,
@@ -175,12 +152,14 @@ class FirestoreTerminalScanRepository implements TerminalScanRepository {
         'abierta': false,
         'asistenciaId': recordId,
         'actualizadoEn': FieldValue.serverTimestamp(),
+        'tokenId': token.id,
       });
     }
     await batch.commit();
 
-    final used = await fetchToken(token.id);
-    return used?.usadoEn ?? DateTime.now();
+    final saved = (await records.doc(recordId).get()).data();
+    final raw = saved?[type == PunchType.entrada ? 'entrada' : 'salida'];
+    return raw is Timestamp ? raw.toDate() : DateTime.now();
   }
 }
 
@@ -342,148 +321,3 @@ class FirestoreAttendanceAdminRepository implements AttendanceAdminRepository {
   }
 }
 
-class FirestoreTerminalRepository implements TerminalRepository {
-  FirestoreTerminalRepository(this._db);
-
-  final FirebaseFirestore _db;
-
-  @override
-  Stream<AttendanceTerminal?> watchTerminal(String uid) =>
-      _col(_db, FirestorePaths.terminales)
-          .doc(uid)
-          .snapshots()
-          .map(
-            (d) => d.data() == null
-                ? null
-                : AttendanceTerminal.fromMap(d.id, d.data()!),
-          );
-
-  @override
-  Stream<List<AttendanceTerminal>> watchAll() =>
-      _col(_db, FirestorePaths.terminales).snapshots().map(
-        (s) => [
-          for (final d in s.docs) AttendanceTerminal.fromMap(d.id, d.data()),
-        ],
-      );
-
-  @override
-  Future<void> authorize(
-    AppUser actor, {
-    required String nombre,
-    required String uid,
-  }) => _write(actor, uid, nombre, true, AuditAction.autorizarTerminal);
-
-  @override
-  Future<void> setActive(
-    AppUser actor,
-    AttendanceTerminal terminal, {
-    required bool active,
-  }) {
-    final batch = _db.batch();
-    final auditId = addAuditEntry(
-      _db,
-      batch,
-      actor: actor,
-      accion: active
-          ? AuditAction.autorizarTerminal
-          : AuditAction.revocarTerminal,
-      objetivo: terminal.uid,
-    );
-    _setTerminal(batch, actor, terminal.uid, terminal.nombre, active, auditId);
-    // Al inhabilitar se invalida el enlace con el dispositivo; reactivar NO lo
-    // recupera: la tablet debe enlazarse de nuevo.
-    if (!active) {
-      batch.delete(_col(_db, FirestorePaths.terminalClaves).doc(terminal.uid));
-    } else {
-      // Reactivar cancela una solicitud de eliminación pendiente.
-      batch.delete(
-        _col(
-          _db,
-          FirestorePaths.solicitudesEliminacionTerminal,
-        ).doc(terminal.uid),
-      );
-    }
-    return batch.commit();
-  }
-
-  @override
-  Stream<Set<String>> watchDeletionRequests() => _col(
-    _db,
-    FirestorePaths.solicitudesEliminacionTerminal,
-  ).snapshots().map((s) => {for (final d in s.docs) d.id});
-
-  @override
-  Future<void> requestDeletion(AppUser actor, AttendanceTerminal terminal) {
-    final batch = _db.batch();
-    final auditId = addAuditEntry(
-      _db,
-      batch,
-      actor: actor,
-      accion: AuditAction.solicitarEliminacionTerminal,
-      objetivo: terminal.uid,
-    );
-    batch.set(
-      _col(
-        _db,
-        FirestorePaths.solicitudesEliminacionTerminal,
-      ).doc(terminal.uid),
-      {
-        'nombre': terminal.nombre.trim(),
-        'solicitadoPor': actor.uid,
-        'solicitadoEn': FieldValue.serverTimestamp(),
-        'ultimaAuditoriaId': auditId,
-      },
-    );
-    return batch.commit();
-  }
-
-  @override
-  Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal) {
-    final batch = _db.batch();
-    addAuditEntry(
-      _db,
-      batch,
-      actor: actor,
-      accion: AuditAction.restablecerTerminal,
-      objetivo: terminal.uid,
-    );
-    batch.delete(_col(_db, FirestorePaths.terminalClaves).doc(terminal.uid));
-    return batch.commit();
-  }
-
-  Future<void> _write(
-    AppUser actor,
-    String uid,
-    String nombre,
-    bool active,
-    String action,
-  ) {
-    final batch = _db.batch();
-    final auditId = addAuditEntry(
-      _db,
-      batch,
-      actor: actor,
-      accion: action,
-      objetivo: uid,
-    );
-    _setTerminal(batch, actor, uid, nombre, active, auditId);
-    return batch.commit();
-  }
-
-  void _setTerminal(
-    WriteBatch batch,
-    AppUser actor,
-    String uid,
-    String nombre,
-    bool active,
-    String auditId,
-  ) {
-    batch.set(_col(_db, FirestorePaths.terminales).doc(uid), {
-      'nombre': nombre.trim(),
-      'activo': active,
-      'autorizadoPor': actor.uid,
-      'actualizadoEn': FieldValue.serverTimestamp(),
-      'ultimaAuditoriaId': auditId,
-    });
-  }
-}

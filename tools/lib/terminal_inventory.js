@@ -12,6 +12,13 @@ const { checkExclusivity, countWhere } = require('./terminal_criteria');
 const TOKEN_LIFETIME_MS = 45 * 1000;
 const IN_CHUNK = 10;
 const MAX_UNUSED_REFERENCE_CHECK = 5000;
+const MAX_LISTED = 200;
+
+/** Acciones de auditoría del sistema antiguo de terminales. */
+const TERMINAL_AUDIT_ACTIONS = [
+  'autorizar_terminal', 'revocar_terminal', 'restablecer_terminal',
+  'solicitar_eliminacion_terminal', 'eliminar_terminal', 'retirar_cuenta_terminal',
+];
 
 const Verdict = Object.freeze({
   exclusive: 'TERMINAL EXCLUSIVA',
@@ -129,6 +136,63 @@ async function inspectTokens({ db, now }) {
   };
 }
 
+/**
+ * Separa los `qrTokens` del sistema nuevo (`generadorUid`) de los del antiguo
+ * (`uid` del trabajador + `tipo` + `terminalId`) y señala cuáles de estos
+ * últimos son prescindibles. SOLO LECTURA.
+ *
+ *  - nuevos: del flujo actual «Generar QR»; nunca se tocan.
+ *  - legado usado y referenciado por una asistencia: historia de trabajadores
+ *    reales; se conserva.
+ *  - legado sin usar o usado sin ninguna asistencia que lo referencie: residuos
+ *    del flujo antiguo, sin utilidad.
+ */
+async function classifyTokens({ db, now }) {
+  const [tokens, attendance] = await Promise.all([
+    db.collection('qrTokens').select('generadorUid', 'usadoEn', 'terminalId', 'creadoEn', 'tipo').get(),
+    db.collection('asistencias').select('tokenId', 'salidaTokenId').get(),
+  ]);
+  const referenced = new Set();
+  for (const d of attendance.docs) {
+    for (const k of ['tokenId', 'salidaTokenId']) {
+      const v = d.get(k);
+      if (typeof v === 'string') referenced.add(v);
+    }
+  }
+  const out = { nuevos: 0, legadoUsadoReferenciado: 0, legadoUsadoSinReferencia: [], legadoSinUsar: [] };
+  for (const d of tokens.docs) {
+    const created = d.get('creadoEn')?.toDate?.() ?? null;
+    const row = {
+      id: d.id,
+      tipo: d.get('tipo') ?? null,
+      terminalId: d.get('terminalId') ?? null,
+      creadoEn: created ? created.toISOString() : null,
+      edadHoras: created ? Math.round((now.getTime() - created.getTime()) / 3600000) : null,
+    };
+    if (d.get('generadorUid')) out.nuevos += 1;
+    else if (d.get('usadoEn')) {
+      if (referenced.has(d.id)) out.legadoUsadoReferenciado += 1;
+      else out.legadoUsadoSinReferencia.push(row);
+    } else out.legadoSinUsar.push(row);
+  }
+  return out;
+}
+
+/** Registros de auditoría del sistema antiguo de terminales (no se borran por defecto). */
+async function inspectTerminalAudit({ db, terminalUids }) {
+  const snap = await db.collection('auditoria').where('accion', 'in', TERMINAL_AUDIT_ACTIONS)
+    .select('accion', 'objetivo', 'actorUid', 'creadoEn').get();
+  const rows = snap.docs.map((d) => ({
+    id: d.id,
+    accion: d.get('accion'),
+    objetivo: d.get('objetivo') ?? null,
+    actorUid: d.get('actorUid') ?? null,
+    creadoEn: d.get('creadoEn')?.toDate?.()?.toISOString() ?? null,
+    objetivoEsTerminal: terminalUids.has(d.get('objetivo')),
+  }));
+  return rows;
+}
+
 async function collectInventory({ auth, db, now = new Date() }) {
   const [authUsers, terminals, profileSnap, claves, pruebas, solicitudes] = await Promise.all([
     listAllAuthUsers(auth),
@@ -177,6 +241,8 @@ async function collectInventory({ auth, db, now = new Date() }) {
     },
     cuentas: accounts,
     tokens: await inspectTokens({ db, now }),
+    clasificacionTokens: await classifyTokens({ db, now }),
+    auditoriaTerminales: await inspectTerminalAudit({ db, terminalUids: terminalIds }),
   };
 }
 
@@ -218,7 +284,28 @@ function formatReport(inv, project) {
   out.push(`Sin usar: más antiguo=${t.sinUsarMasAntiguo ?? '-'} más reciente=${t.sinUsarMasReciente ?? '-'}`);
   out.push(`Asistencias con origen QR: ${t.asistenciasQr}`);
   out.push(`Asistencias que referencian tokens sin usar: ${t.asistenciasQueReferencianTokensSinUsar} (revisados ${t.referenciasRevisadas}, sin revisar ${t.referenciasSinRevisar})`);
-  out.push('Los tokens usados se conservan siempre: son la referencia histórica de las asistencias.');
+  out.push('Los tokens usados y referenciados se conservan siempre: son la referencia histórica de las asistencias.');
+
+  const c = inv.clasificacionTokens;
+  out.push('');
+  out.push('── Clasificación de qrTokens (sistema nuevo vs. antiguo) ─────────────');
+  out.push(`Del sistema NUEVO (generadorUid), no se tocan : ` + c.nuevos);
+  out.push(`Antiguos usados y referenciados por una asistencia (se conservan): ` + c.legadoUsadoReferenciado);
+  out.push(`Antiguos usados SIN asistencia que los referencie: ` + c.legadoUsadoSinReferencia.length);
+  out.push(`Antiguos SIN usar (residuos): ` + c.legadoSinUsar.length);
+  for (const [titulo, rows] of [['usados sin referencia', c.legadoUsadoSinReferencia], ['sin usar', c.legadoSinUsar]]) {
+    for (const t of rows.slice(0, MAX_LISTED)) {
+      out.push(`  - qrTokens/` + t.id + ` (` + titulo + `, tipo=` + (t.tipo ?? '-') + `, terminal=` + (t.terminalId ?? '-') + `, creado=` + (t.creadoEn ?? '-') + `)`);
+    }
+    if (rows.length > MAX_LISTED) out.push(`  … y ` + (rows.length - MAX_LISTED) + ` más (` + titulo + `)`);
+  }
+
+  out.push('');
+  out.push('── Auditoría del sistema antiguo de terminales (no se toca por defecto) ─────────────');
+  out.push('Registros: ' + inv.auditoriaTerminales.length);
+  for (const a of inv.auditoriaTerminales.slice(0, MAX_LISTED)) {
+    out.push(`  - auditoria/` + a.id + ` accion=` + a.accion + ` objetivo=` + (a.objetivo ?? '-') + ` actor=` + (a.actorUid ?? '-') + ` ` + (a.creadoEn ?? ''));
+  }
   return out.join('\n');
 }
 

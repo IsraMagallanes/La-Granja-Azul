@@ -182,3 +182,30 @@ test('CLI: genera el informe (texto y JSON) contra el emulador sin cambiar nada'
 });
 
 test.after(async () => { await app.delete(); });
+
+test('separa los qrTokens del sistema nuevo de los residuos del antiguo y lista la auditoría de terminales (solo lectura)', async () => {
+  const before = await snapshotAll();
+  const stamp = newUid();
+  await db.doc(`qrTokens/${stamp}-nuevo`).set({ generadorUid: 'g1', generadorRol: 'admin', nombreMostrar: 'Gema', creadoEn: new Date() });
+  await db.doc(`qrTokens/${stamp}-ref`).set({ uid: 'w1', tipo: 'entrada', terminalId: 't', usadoEn: new Date(), creadoEn: new Date() });
+  await db.doc(`asistencias/${stamp}-a`).set({ uid: 'w1', origen: 'qr', tokenId: `${stamp}-ref` });
+  await db.doc(`qrTokens/${stamp}-huerfano`).set({ uid: 'w1', tipo: 'salida', terminalId: 't', usadoEn: new Date(), creadoEn: new Date() });
+  await db.doc(`qrTokens/${stamp}-sinusar`).set({ uid: 'w2', tipo: 'entrada', usadoEn: null, terminalId: null, creadoEn: new Date() });
+  await db.doc(`auditoria/${stamp}-aud`).set({ accion: 'revocar_terminal', actorUid: 'sa', objetivo: 'tX', campos: [] });
+  await db.doc(`auditoria/${stamp}-otra`).set({ accion: 'guardar_horario', actorUid: 'sa', objetivo: 'h', campos: [] });
+
+  const mid = await snapshotAll();
+  const inv = await collectInventory({ auth, db });
+  const c = inv.clasificacionTokens;
+  assert.ok(c.nuevos >= 1);
+  assert.ok(c.legadoUsadoReferenciado >= 1);
+  assert.ok(c.legadoUsadoSinReferencia.some((t) => t.id === `${stamp}-huerfano`));
+  assert.ok(c.legadoSinUsar.some((t) => t.id === `${stamp}-sinusar`));
+  assert.ok(!c.legadoSinUsar.some((t) => t.id === `${stamp}-nuevo`), 'un token nuevo jamás es residuo');
+  assert.ok(!c.legadoUsadoSinReferencia.some((t) => t.id === `${stamp}-ref`), 'uno referenciado se conserva');
+  assert.ok(inv.auditoriaTerminales.some((a) => a.id === `${stamp}-aud`));
+  assert.ok(!inv.auditoriaTerminales.some((a) => a.id === `${stamp}-otra`));
+  assert.match(formatReport(inv, 'la-granja-azul-app'), /Clasificación de qrTokens/);
+  assert.deepEqual(await snapshotAll(), mid, 'el inventario no modifica nada');
+  assert.notDeepEqual(mid, before);
+});

@@ -7,13 +7,11 @@ import 'package:granja_azul/core/routing/auth_redirect.dart';
 import 'package:granja_azul/core/time/lima_time.dart';
 import 'package:granja_azul/features/attendance/models/attendance_models.dart';
 import 'package:granja_azul/features/attendance/models/schedule.dart';
-import 'package:granja_azul/features/attendance/repositories/attendance_repositories.dart';
 import 'package:granja_azul/features/attendance/services/attendance_report.dart';
 import 'package:granja_azul/features/attendance/services/attendance_services.dart';
 import 'package:granja_azul/features/attendance/services/qr_payload.dart';
 import 'package:granja_azul/features/attendance/services/regularization.dart';
 import 'package:granja_azul/features/attendance/services/scan_validator.dart';
-import 'package:granja_azul/features/attendance/services/terminal_binding.dart';
 import 'package:granja_azul/features/auth/models/session_state.dart';
 import 'package:granja_azul/features/auth/services/session_resolver.dart';
 import 'package:granja_azul/features/roles/models/permission.dart';
@@ -23,24 +21,24 @@ import 'package:granja_azul/features/roles/services/role_navigation.dart';
 import 'package:granja_azul/features/staff/models/staff_status.dart';
 import 'package:granja_azul/features/users/models/app_user.dart';
 
-import '../support/fakes.dart';
 import '../support/phase3_fakes.dart';
 
 RoleNavigation nav() => const RoleNavigation(PermissionService());
 
 QrToken tokenOf(
-  PunchType type, {
+  UserRole generator, {
   String id = 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
-  String uid = 'w1',
-  bool used = false,
+  String uid = 'g1',
+  DateTime? creadoEn,
 }) => QrToken(
   id: id,
-  uid: uid,
-  tipo: type,
-  nombreMostrar: 'Mario',
-  creadoEn: DateTime.utc(2026, 10, 26, 13),
-  usadoEn: used ? DateTime.utc(2026, 10, 26, 13) : null,
+  generadorUid: uid,
+  generadorRol: generator,
+  nombreMostrar: 'Gema',
+  creadoEn: creadoEn ?? DateTime.utc(2026, 10, 26, 13),
 );
+
+final scanNow = DateTime.utc(2026, 10, 26, 13, 0, 10);
 
 void main() {
   group('hora de Lima', () {
@@ -86,100 +84,128 @@ void main() {
     });
   });
 
-  group('QR del trabajador', () {
-    late FakeWorkerAttendanceRepository repo;
-    late QrIssueService service;
-    final worker = actorOf(UserRole.mesero, uid: 'w1');
+  group('quién genera y quién escanea el QR', () {
+    const policy = QrPolicy();
 
-    setUp(() {
-      repo = FakeWorkerAttendanceRepository();
-      service = QrIssueService(repo);
+    test('generan exclusivamente Superadmin, Admin y Cajero', () {
+      for (final r in UserRole.values) {
+        final expected =
+            r == UserRole.superadmin ||
+            r == UserRole.admin ||
+            r == UserRole.cajero;
+        expect(policy.canGenerate(r), expected, reason: r.name);
+      }
     });
 
-    test(
-      'genera un QR de entrada con vencimiento y NO registra asistencia',
-      () async {
-        final now = DateTime(2026, 10, 26, 8);
+    test('escanean exclusivamente Mesero, Cocina y Cajero', () {
+      for (final r in UserRole.values) {
+        final expected =
+            r == UserRole.mesero ||
+            r == UserRole.cocina ||
+            r == UserRole.cajero;
+        expect(policy.canScan(r), expected, reason: r.name);
+      }
+    });
+
+    test('Mesero y Cocina escanean QR de cualquier generador autorizado', () {
+      for (final scanner in [UserRole.mesero, UserRole.cocina]) {
+        for (final generator in [
+          UserRole.superadmin,
+          UserRole.admin,
+          UserRole.cajero,
+        ]) {
+          expect(policy.canScanFrom(scanner, generator), isTrue);
+        }
+        expect(policy.canScanFrom(scanner, UserRole.mesero), isFalse);
+        expect(policy.canScanFrom(scanner, UserRole.cocina), isFalse);
+      }
+    });
+
+    test('el Cajero solo escanea QR de Admin o Superadmin', () {
+      expect(policy.canScanFrom(UserRole.cajero, UserRole.admin), isTrue);
+      expect(policy.canScanFrom(UserRole.cajero, UserRole.superadmin), isTrue);
+      expect(policy.canScanFrom(UserRole.cajero, UserRole.cajero), isFalse);
+      expect(policy.canScanFrom(UserRole.cajero, UserRole.mesero), isFalse);
+    });
+
+    test('Admin y Superadmin no escanean', () {
+      expect(policy.canScanFrom(UserRole.admin, UserRole.cajero), isFalse);
+      expect(
+        policy.canScanFrom(UserRole.superadmin, UserRole.admin),
+        isFalse,
+      );
+    });
+  });
+
+  group('generación del QR', () {
+    late FakeQrGenerationRepository repo;
+    late QrGenerationService service;
+
+    setUp(() {
+      repo = FakeQrGenerationRepository();
+      service = QrGenerationService(repo);
+    });
+
+    test('Superadmin, Admin y Cajero generan un QR con vencimiento', () async {
+      final now = DateTime(2026, 10, 26, 8);
+      for (final role in [
+        UserRole.superadmin,
+        UserRole.admin,
+        UserRole.cajero,
+      ]) {
         final qr = await service.issue(
-          worker,
-          PunchType.entrada,
-          state: null,
+          actorOf(role, uid: 'g-${role.name}'),
           clock: () => now,
         );
         expect(qr.expiresAt, now.add(const Duration(seconds: 45)));
         expect(QrPayload.decode(qr.payload), qr.token.id);
-        expect(repo.tokensCreated.single.$1, PunchType.entrada);
-        // El repositorio del trabajador ni siquiera puede registrar asistencia.
-        expect(repo, isA<WorkerAttendanceRepository>());
-        expect(repo, isNot(isA<TerminalScanRepository>()));
-      },
-    );
-
-    test('no genera entrada si ya hay una abierta', () {
-      expect(
-        service.issue(
-          worker,
-          PunchType.entrada,
-          state: const AttendanceState(abierta: true, asistenciaId: 'x'),
-        ),
-        throwsA(isA<AppFailure>()),
-      );
-      expect(repo.tokensCreated, isEmpty);
+        expect(qr.token.generadorRol, role);
+      }
+      expect(repo.created, hasLength(3));
     });
 
-    test('no genera salida sin entrada abierta', () {
-      expect(
-        service.issue(worker, PunchType.salida, state: null),
-        throwsA(isA<AppFailure>()),
-      );
-      expect(
-        service.issue(
-          worker,
-          PunchType.salida,
-          state: const AttendanceState(abierta: false),
-        ),
-        throwsA(isA<AppFailure>()),
-      );
+    test('Mesero y Cocina NO generan QR: se rechaza sin tocar el servidor', () {
+      for (final role in [UserRole.mesero, UserRole.cocina]) {
+        expect(
+          service.issue(actorOf(role)),
+          throwsA(isA<AppFailure>()),
+          reason: role.name,
+        );
+      }
+      expect(repo.created, isEmpty);
     });
 
-    test('genera salida con entrada abierta', () async {
-      final qr = await service.issue(
-        worker,
-        PunchType.salida,
-        state: const AttendanceState(abierta: true, asistenciaId: 'x'),
-      );
-      expect(qr.token.tipo, PunchType.salida);
-    });
-
-    test('un trabajador inactivo no genera QR', () {
-      const inactive = AppUser(
-        uid: 'w2',
-        email: 'w2@granja.pe',
-        nombre: 'W',
-        role: UserRole.mesero,
+    test('un generador inactivo no genera QR', () {
+      final inactive = AppUser(
+        uid: 'g1',
+        email: 'g1@granja.pe',
+        nombre: 'G',
+        role: UserRole.cajero,
         activo: false,
       );
-      expect(
-        service.issue(inactive, PunchType.entrada, state: null),
-        throwsA(isA<AppFailure>()),
-      );
+      expect(service.issue(inactive), throwsA(isA<AppFailure>()));
+      expect(repo.created, isEmpty);
     });
 
     test('la solicitud de corrección exige motivo', () async {
+      final repo = FakeWorkerAttendanceRepository();
+      final self = AttendanceSelfService(repo);
+      final worker = actorOf(UserRole.mesero, uid: 'w1');
       await expectLater(
-        service.requestCorrection(
+        self.requestCorrection(
           worker: worker,
-          fecha: '2026-10-20',
+          fecha: '2026-10-25',
           tipo: 'entrada',
-          motivo: 'corto',
+          motivo: 'x',
         ),
         throwsA(isA<AppFailure>()),
       );
-      await service.requestCorrection(
+      expect(repo.corrections, isEmpty);
+      await self.requestCorrection(
         worker: worker,
-        fecha: '2026-10-20',
+        fecha: '2026-10-25',
         tipo: 'entrada',
-        motivo: 'Olvidé marcar la entrada',
+        motivo: 'Olvidé marcar la entrada del turno de la tarde',
       );
       expect(repo.corrections, hasLength(1));
     });
@@ -188,419 +214,302 @@ void main() {
   group('ScanValidator', () {
     const validator = ScanValidator();
 
-    test('QR inexistente o ya usado', () {
-      expect(validator.evaluate(token: null), isA<ScanRejected>());
+    ScanDecision eval(
+      QrToken? token,
+      UserRole scanner, {
+      AttendanceState? state,
+      String uid = 'w1',
+      DateTime? now,
+    }) => validator.evaluate(
+      token: token,
+      scannerRole: scanner,
+      scannerUid: uid,
+      now: now ?? scanNow,
+      state: state,
+    );
+
+    test('QR inexistente o vencido', () {
+      expect(eval(null, UserRole.mesero), isA<ScanRejected>());
+      final old = tokenOf(UserRole.admin);
       expect(
-        validator.evaluate(token: tokenOf(PunchType.entrada, used: true)),
+        eval(old, UserRole.mesero, now: old.creadoEn!.add(QrToken.lifetime)),
         isA<ScanRejected>(),
       );
     });
 
-    test('entrada duplicada', () {
-      final d = validator.evaluate(
-        token: tokenOf(PunchType.entrada),
-        state: const AttendanceState(abierta: true, asistenciaId: 'a'),
+    test('nadie escanea su propio QR', () {
+      expect(
+        eval(tokenOf(UserRole.cajero, uid: 'w1'), UserRole.cajero, uid: 'w1'),
+        isA<ScanRejected>(),
       );
-      expect(d, isA<ScanRejected>());
     });
 
-    test('salida sin entrada', () {
+    test('un rol que no escanea no registra nada', () {
+      for (final role in [UserRole.admin, UserRole.superadmin]) {
+        expect(eval(tokenOf(UserRole.admin), role), isA<ScanRejected>());
+      }
+    });
+
+    test('el Cajero rechaza un QR de otro Cajero y acepta uno de Admin', () {
       expect(
-        validator.evaluate(token: tokenOf(PunchType.salida), state: null),
+        eval(tokenOf(UserRole.cajero), UserRole.cajero),
         isA<ScanRejected>(),
       );
       expect(
-        validator.evaluate(
-          token: tokenOf(PunchType.salida),
-          state: const AttendanceState(abierta: false),
+        eval(tokenOf(UserRole.admin), UserRole.cajero),
+        isA<ScanProceed>(),
+      );
+      expect(
+        eval(tokenOf(UserRole.superadmin), UserRole.cajero),
+        isA<ScanProceed>(),
+      );
+    });
+
+    test('Mesero y Cocina aceptan QR de Cajero, Admin y Superadmin', () {
+      for (final scanner in [UserRole.mesero, UserRole.cocina]) {
+        for (final gen in [
+          UserRole.cajero,
+          UserRole.admin,
+          UserRole.superadmin,
+        ]) {
+          expect(eval(tokenOf(gen), scanner), isA<ScanProceed>());
+        }
+      }
+    });
+
+    test('entrada o salida se determinan solos según la jornada', () {
+      final token = tokenOf(UserRole.admin);
+      final closed = eval(token, UserRole.mesero) as ScanProceed;
+      expect(closed.type, PunchType.entrada);
+      final afterExit = eval(
+        token,
+        UserRole.mesero,
+        state: const AttendanceState(abierta: false, asistenciaId: 'a1'),
+      ) as ScanProceed;
+      expect(afterExit.type, PunchType.entrada);
+      final open = eval(
+        token,
+        UserRole.mesero,
+        state: const AttendanceState(abierta: true, asistenciaId: 'a1'),
+      ) as ScanProceed;
+      expect(open.type, PunchType.salida);
+    });
+
+    test('el mismo QR no encadena dos marcaciones', () {
+      final token = tokenOf(UserRole.admin);
+      expect(
+        eval(
+          token,
+          UserRole.mesero,
+          state: AttendanceState(
+            abierta: true,
+            asistenciaId: 'a1',
+            tokenId: token.id,
+          ),
         ),
         isA<ScanRejected>(),
       );
     });
-
-    test('entrada y salida válidas se identifican automáticamente', () {
-      final entrada = validator.evaluate(
-        token: tokenOf(PunchType.entrada),
-        state: null,
-      );
-      expect(entrada, isA<ScanProceed>());
-      final salida = validator.evaluate(
-        token: tokenOf(PunchType.salida),
-        state: const AttendanceState(abierta: true, asistenciaId: 'rec1'),
-      );
-      expect((salida as ScanProceed).openRecordId, 'rec1');
-    });
   });
 
-  group('terminal', () {
-    late FakeTerminalScanRepository repo;
-    late TerminalScanService service;
+  group('escaneo', () {
+    late FakeQrScanRepository repo;
+    late AttendanceScanService service;
     final entradaId = 'a' * 32;
     final salidaId = 'b' * 32;
+    final mesero = actorOf(UserRole.mesero, uid: 'w1');
+    final cajero = actorOf(UserRole.cajero, uid: 'c1');
 
-    QrToken seed(String id, PunchType type) {
-      final t = tokenOf(type, id: id);
+    QrToken seed(String id, UserRole generator, {String uid = 'g1'}) {
+      final t = tokenOf(generator, id: id, uid: uid);
       repo.tokens[id] = t;
       return t;
     }
 
-    late FakeDeviceKeyStore keys;
-
     setUp(() {
-      repo = FakeTerminalScanRepository()
-        ..enrolledKey = 'clave-del-dispositivo';
-      keys = FakeDeviceKeyStore({'t1': 'clave-del-dispositivo'});
-      service = TerminalScanService(repo, keys);
+      repo = FakeQrScanRepository()
+        ..roles.addAll({'w1': UserRole.mesero, 'c1': UserRole.cajero});
+      service = AttendanceScanService(repo);
     });
 
-    test('entrada: registra con la hora del servidor y confirma', () async {
-      seed(entradaId, PunchType.entrada);
-      final r = await service.process(
-        QrPayload.encode(entradaId),
-        terminalUid: 't1',
+    Future<ScanResult> scan(String id, AppUser who) =>
+        service.process(QrPayload.encode(id), scanner: who, clock: () => scanNow);
+
+    test('entrada y luego salida, sin elegir cuál: la decide la jornada', () async {
+      seed(entradaId, UserRole.admin);
+      seed(salidaId, UserRole.cajero, uid: 'g2');
+      final entrada = await scan(entradaId, mesero);
+      expect(entrada.success, isTrue);
+      expect(entrada.type, PunchType.entrada);
+      expect(entrada.at, repo.serverTime);
+      final salida = await scan(salidaId, mesero);
+      expect(salida.success, isTrue);
+      expect(salida.type, PunchType.salida);
+      expect(repo.commits, ['entrada:w1', 'salida:w1']);
+    });
+
+    test('Cajero: acepta QR de Admin y rechaza QR de otro Cajero', () async {
+      seed(entradaId, UserRole.cajero, uid: 'c2');
+      final rejected = await scan(entradaId, cajero);
+      expect(rejected.success, isFalse);
+      expect(repo.commits, isEmpty);
+      seed(salidaId, UserRole.admin);
+      expect((await scan(salidaId, cajero)).success, isTrue);
+    });
+
+    test('Admin y Superadmin no registran asistencia por QR', () async {
+      seed(entradaId, UserRole.cajero);
+      for (final role in [UserRole.admin, UserRole.superadmin]) {
+        final r = await scan(entradaId, actorOf(role, uid: 'x-${role.name}'));
+        expect(r.success, isFalse, reason: role.name);
+      }
+      expect(repo.commits, isEmpty);
+    });
+
+    test('un QR vencido o ajeno no registra nada', () async {
+      expect((await scan(entradaId, mesero)).success, isFalse);
+      repo.tokens[entradaId] = tokenOf(
+        UserRole.admin,
+        id: entradaId,
+        creadoEn: scanNow.subtract(const Duration(minutes: 5)),
       );
-      expect(r.success, isTrue);
-      expect(r.type, PunchType.entrada);
-      expect(r.name, 'Mario');
-      expect(r.at, repo.serverTime);
+      expect((await scan(entradaId, mesero)).success, isFalse);
+      final r = await service.process('https://ejemplo.com', scanner: mesero);
+      expect(r.success, isFalse);
+      expect(repo.commits, isEmpty);
+    });
+
+    test('el mismo QR no se encadena (entrada y salida inmediata)', () async {
+      seed(entradaId, UserRole.admin);
+      expect((await scan(entradaId, mesero)).success, isTrue);
+      expect((await scan(entradaId, mesero)).success, isFalse);
       expect(repo.commits, ['entrada:w1']);
     });
 
-    test('salida después de la entrada', () async {
-      seed(entradaId, PunchType.entrada);
-      seed(salidaId, PunchType.salida);
-      await service.process(QrPayload.encode(entradaId), terminalUid: 't1');
-      final r = await service.process(
-        QrPayload.encode(salidaId),
-        terminalUid: 't1',
+    test('un trabajador inactivo no marca', () async {
+      seed(entradaId, UserRole.admin);
+      final inactive = AppUser(
+        uid: 'w1',
+        email: 'w1@granja.pe',
+        nombre: 'W',
+        role: UserRole.mesero,
+        activo: false,
       );
-      expect(r.success, isTrue);
-      expect(r.type, PunchType.salida);
-      expect(repo.states['w1']!.abierta, isFalse);
-    });
-
-    test('un QR no se reutiliza', () async {
-      seed(entradaId, PunchType.entrada);
-      await service.process(QrPayload.encode(entradaId), terminalUid: 't1');
-      final again = await service.process(
-        QrPayload.encode(entradaId),
-        terminalUid: 't1',
-      );
-      expect(again.success, isFalse);
-      expect(again.message, contains('utilizado'));
-      expect(repo.commits, hasLength(1));
-    });
-
-    test('impide entradas duplicadas con otro QR', () async {
-      seed(entradaId, PunchType.entrada);
-      seed('c' * 32, PunchType.entrada);
-      await service.process(QrPayload.encode(entradaId), terminalUid: 't1');
-      final r = await service.process(
-        QrPayload.encode('c' * 32),
-        terminalUid: 't1',
-      );
-      expect(r.success, isFalse);
-      expect(repo.commits, hasLength(1));
-    });
-
-    test('impide salida sin entrada', () async {
-      seed(salidaId, PunchType.salida);
-      final r = await service.process(
-        QrPayload.encode(salidaId),
-        terminalUid: 't1',
-      );
-      expect(r.success, isFalse);
+      expect((await scan(entradaId, inactive)).success, isFalse);
       expect(repo.commits, isEmpty);
     });
 
-    test('QR ajeno o inexistente no registra nada', () async {
-      expect(
-        (await service.process('hola', terminalUid: 't1')).success,
-        isFalse,
-      );
-      expect(
-        (await service.process(
-          QrPayload.encode('d' * 32),
-          terminalUid: 't1',
-        )).success,
-        isFalse,
-      );
-      expect(repo.commits, isEmpty);
-    });
-
-    test('credenciales copiadas a otro equipo (sin el secreto del dispositivo) no marcan', () async {
-      seed(entradaId, PunchType.entrada);
-      // Equipo sin secreto local.
-      final copied = TerminalScanService(repo, FakeDeviceKeyStore());
-      final r = await copied.process(
-        QrPayload.encode(entradaId),
-        terminalUid: 't1',
-      );
-      expect(r.success, isFalse);
-      expect(repo.commits, isEmpty);
-      // Equipo con un secreto distinto: el servidor lo rechaza.
-      final forged = TerminalScanService(
-        repo,
-        FakeDeviceKeyStore({'t1': 'otra-clave'}),
-      );
-      final r2 = await forged.process(
-        QrPayload.encode(entradaId),
-        terminalUid: 't1',
-      );
-      expect(r2.success, isFalse);
-      expect(repo.commits, isEmpty);
-    });
-
-    test('si el servidor rechaza (vencido / inactivo / terminal no autorizada) no se confirma', () async {
-      seed(entradaId, PunchType.entrada);
+    test('si el servidor rechaza no se confirma', () async {
+      seed(entradaId, UserRole.admin);
       repo.serverRejects = true;
-      final r = await service.process(
-        QrPayload.encode(entradaId),
-        terminalUid: 't1',
-      );
+      final r = await scan(entradaId, mesero);
       expect(r.success, isFalse);
-      expect(r.message, contains('servidor'));
+      expect(r.message, isNotEmpty);
       expect(repo.commits, isEmpty);
     });
   });
 
-  group('enlace terminal ↔ dispositivo', () {
-    test(
-      'el primer inicio registra un secreto local y en el servidor',
-      () async {
-        final repo = FakeTerminalScanRepository();
-        final store = FakeDeviceKeyStore();
-        final status = await TerminalBindingService(
-          store,
-          repo,
-        ).ensureBound('t1');
-        expect(status, isA<DeviceBound>());
-        expect(store.keys['t1'], isNotNull);
-        expect(store.keys['t1'], repo.enrolledKey);
-        expect(store.keys['t1']!.length, greaterThanOrEqualTo(32));
-      },
-    );
+  group('sistema antiguo de terminales retirado', () {
+    const redirect = AuthRedirect(RoleNavigation(PermissionService()));
+    const oldRoutes = ['/asistencia/terminal', '/app/terminales'];
 
-    test(
-      'los siguientes inicios reutilizan el secreto sin volver a registrarlo',
-      () async {
-        final repo = FakeTerminalScanRepository();
-        final store = FakeDeviceKeyStore();
-        final service = TerminalBindingService(store, repo);
-        await service.ensureBound('t1');
-        final first = store.keys['t1'];
-        await service.ensureBound('t1');
-        expect(store.keys['t1'], first);
-      },
-    );
-
-    test(
-      'un segundo equipo con las mismas credenciales no puede enlazarse',
-      () async {
-        final repo = FakeTerminalScanRepository();
-        await TerminalBindingService(
-          FakeDeviceKeyStore(),
-          repo,
-        ).ensureBound('t1');
-        final intruder = FakeDeviceKeyStore();
-        final status = await TerminalBindingService(
-          intruder,
-          repo,
-        ).ensureBound('t1');
-        expect(status, isA<DeviceNotBound>());
-        expect(intruder.keys, isEmpty);
-      },
-    );
-
-    test('cada secreto generado es distinto', () {
-      expect(
-        TerminalBindingService.generateKey(),
-        isNot(TerminalBindingService.generateKey()),
-      );
+    test('las rutas antiguas ya no existen', () {
+      for (final path in oldRoutes) {
+        expect(AppRoute.fromPath(path), isNull, reason: path);
+      }
     });
 
-    test('solo el Superadmin restablece el enlace', () async {
-      final terminals = FakeTerminalRepository();
-      final service = TerminalAdminService(terminals, FakeAccountCreator());
-      const t = AttendanceTerminal(uid: 't1', nombre: 'Tablet', activo: true);
-      await expectLater(
-        service.resetDeviceLink(actorOf(UserRole.admin), t),
-        throwsA(isA<AppFailure>()),
-      );
-      await service.resetDeviceLink(actorOf(UserRole.superadmin), t);
-      expect(terminals.resets, ['t1']);
-    });
-
-    test(
-      'si falla autorizar la terminal, la cuenta recién creada se elimina',
-      () async {
-        final accounts = FakeAccountCreator();
-        final service = TerminalAdminService(_FailingTerminals(), accounts);
-        await expectLater(
-          service.register(
-            actorOf(UserRole.superadmin),
-            nombre: 'Tablet',
-            email: 't@granja.pe',
-            password: 'clavesegura1',
-          ),
-          throwsA(anything),
-        );
-        expect(accounts.accounts.single.rolledBack, isTrue);
-        expect(accounts.accounts.single.committed, isFalse);
-      },
-    );
-  });
-
-  group('terminales: sesión y navegación', () {
-    const nav = RoleNavigation(PermissionService());
-    const redirect = AuthRedirect(nav);
-    const terminal = AttendanceTerminal(
-      uid: 't1',
-      nombre: 'Tablet',
-      activo: true,
-    );
-
-    test(
-      'una cuenta sin perfil pero con terminal activa es TerminalAuthenticated',
-      () {
-        expect(
-          SessionResolver.fromAccount(null, terminal),
-          isA<TerminalAuthenticated>(),
-        );
-      },
-    );
-
-    test('terminal revocada o cuenta sin ningún registro: acceso denegado', () {
-      expect(
-        SessionResolver.fromAccount(
-          null,
-          const AttendanceTerminal(uid: 't', nombre: 'x', activo: false),
-        ),
-        isA<AccessDenied>(),
-      );
-      expect(SessionResolver.fromAccount(null, null), isA<AccessDenied>());
-    });
-
-    test('un perfil de personal tiene prioridad sobre terminal', () {
-      expect(
-        SessionResolver.fromAccount(buildUser(), terminal),
-        isA<Authenticated>(),
-      );
-    });
-
-    test('la terminal solo puede estar en /asistencia/terminal', () {
-      const session = TerminalAuthenticated(terminal);
-      expect(
-        redirect.redirect(AppRoute.attendanceTerminal.path, session),
-        isNull,
-      );
-      expect(
-        redirect.redirect(AppRoute.dashboard.path, session),
-        AppRoute.attendanceTerminal.path,
-      );
-      expect(
-        redirect.redirect(AppRoute.login.path, session),
-        AppRoute.attendanceTerminal.path,
-      );
-    });
-
-    test(
-      'el personal NO puede usar la pantalla de terminal desde su dispositivo',
-      () {
-        for (final role in UserRole.values) {
-          final session = Authenticated(buildUser(role: role));
-          final target = redirect.redirect(
-            AppRoute.attendanceTerminal.path,
-            session,
-          );
+    test('quien entra a una ruta antigua vuelve a su inicio, sea cual sea su rol', () {
+      for (final role in UserRole.values) {
+        final s = Authenticated(actorOf(role));
+        for (final path in oldRoutes) {
           expect(
-            target,
-            isNot(AppRoute.attendanceTerminal.path),
-            reason: role.name,
+            redirect.redirect(path, s),
+            nav().homeFor(role).path,
+            reason: '${role.name} $path',
           );
-          expect(target, isNotNull, reason: role.name);
         }
-      },
-    );
-
-    test('un anónimo no llega a la terminal', () {
-      expect(
-        redirect.redirect(
-          AppRoute.attendanceTerminal.path,
-          const Unauthenticated(),
-        ),
-        isNot(AppRoute.attendanceTerminal.path),
-      );
+      }
     });
 
-    test('solo el Superadmin autoriza y revoca terminales', () async {
-      final terminals = FakeTerminalRepository();
-      final accounts = FakeAccountCreator();
-      final service = TerminalAdminService(terminals, accounts);
-      await expectLater(
-        service.register(
-          actorOf(UserRole.admin),
-          nombre: 'Tablet',
-          email: 't@granja.pe',
-          password: 'clavesegura1',
-        ),
-        throwsA(isA<AppFailure>()),
-      );
-      expect(accounts.created, isEmpty);
-
-      final boss = actorOf(UserRole.superadmin);
-      await service.register(
-        boss,
-        nombre: 'Tablet salón',
-        email: 'T@granja.pe',
-        password: 'clavesegura1',
-      );
-      expect(accounts.created.single, ('t@granja.pe', 'clavesegura1'));
-      expect(terminals.terminals['term-1']!.activo, isTrue);
-
-      await service.setActive(
-        boss,
-        terminals.terminals['term-1']!,
-        active: false,
-      );
-      expect(terminals.terminals['term-1']!.activo, isFalse);
-      await expectLater(
-        service.setActive(
-          actorOf(UserRole.admin),
-          terminals.terminals['term-1']!,
-          active: true,
-        ),
-        throwsA(isA<AppFailure>()),
-      );
+    test('sin sesión, las rutas antiguas llevan al acceso, no a una terminal', () {
+      for (final path in oldRoutes) {
+        expect(redirect.redirect(path, const Unauthenticated()), isNot(path));
+      }
     });
 
-    test('la contraseña de la terminal debe ser robusta', () {
-      final service = TerminalAdminService(
-        FakeTerminalRepository(),
-        FakeAccountCreator(),
-      );
-      expect(
-        service.register(
-          actorOf(UserRole.superadmin),
-          nombre: 'T1',
-          email: 't@granja.pe',
-          password: 'corta',
-        ),
-        throwsA(isA<AppFailure>()),
-      );
+    test('una cuenta sin perfil de personal queda sin acceso (ya no hay cuentas de terminal)', () {
+      expect(SessionResolver.fromProfile(null), isA<AccessDenied>());
+    });
+
+    test('ningún rol ve una opción «Terminales» en el menú', () {
+      for (final role in UserRole.values) {
+        expect(
+          nav().routesFor(role).where((r) => r.label == 'Terminales'),
+          isEmpty,
+          reason: role.name,
+        );
+      }
     });
   });
 
   group('permisos de asistencia', () {
     const service = PermissionService();
 
-    test('todos los roles generan su propio QR', () {
+    test('todos los roles ven su propia asistencia', () {
       for (final r in UserRole.values) {
         expect(
           service.can(r, Permission.ownAttendance),
           isTrue,
           reason: r.name,
         );
+      }
+    });
+
+    test('generar QR: solo Superadmin, Admin y Cajero', () {
+      for (final r in UserRole.values) {
+        final expected = {
+          UserRole.superadmin,
+          UserRole.admin,
+          UserRole.cajero,
+        }.contains(r);
+        expect(
+          service.can(r, Permission.generateAttendanceQr),
+          expected,
+          reason: r.name,
+        );
+        expect(
+          nav().routesFor(r).contains(AppRoute.generateQr),
+          expected,
+          reason: r.name,
+        );
+      }
+    });
+
+    test('escanear QR: solo Mesero, Cocina y Cajero', () {
+      for (final r in UserRole.values) {
+        final expected = {
+          UserRole.mesero,
+          UserRole.cocina,
+          UserRole.cajero,
+        }.contains(r);
+        expect(
+          service.can(r, Permission.scanAttendanceQr),
+          expected,
+          reason: r.name,
+        );
+        expect(
+          nav().routesFor(r).contains(AppRoute.scanQr),
+          expected,
+          reason: r.name,
+        );
+      }
+    });
+
+    test('Mesero y Cocina no ven ninguna pantalla de generar QR', () {
+      for (final r in [UserRole.mesero, UserRole.cocina]) {
+        expect(nav().routesFor(r), isNot(contains(AppRoute.generateQr)));
+        expect(nav().routesFor(r), contains(AppRoute.scanQr));
       }
     });
 
@@ -615,10 +524,9 @@ void main() {
       }
     });
 
-    test('terminales, restricciones y auditoría: solo Superadmin', () {
+    test('restricciones y auditoría: solo Superadmin', () {
       for (final r in UserRole.values) {
         final isSuper = r == UserRole.superadmin;
-        expect(service.can(r, Permission.manageTerminals), isSuper);
         expect(service.can(r, Permission.manageRestrictions), isSuper);
         expect(service.can(r, Permission.viewAudit), isSuper);
       }
@@ -630,7 +538,6 @@ void main() {
         final routes = nav().routesFor(UserRole.mesero);
         expect(routes, contains(AppRoute.myAttendance));
         expect(routes, isNot(contains(AppRoute.attendanceAdmin)));
-        expect(routes, isNot(contains(AppRoute.terminals)));
         expect(routes, isNot(contains(AppRoute.restrictions)));
         expect(routes, isNot(contains(AppRoute.users)));
       },
@@ -883,15 +790,4 @@ void main() {
       expect(reg.originFor(supervised: false), AttendanceOrigin.regularizada);
     });
   });
-}
-
-class _FailingTerminals extends FakeTerminalRepository {
-  @override
-  Future<void> authorize(
-    AppUser actor, {
-    required String nombre,
-    required String uid,
-  }) => Future.error(
-    const AppFailure('permission-denied', code: 'permission-denied'),
-  );
 }

@@ -37,11 +37,6 @@ abstract final class FirestorePaths {
 
   // Asistencia.
   static const horarios = 'horarios';
-  static const terminales = 'terminales';
-  static const terminalClaves = 'terminalClaves';
-  static const terminalPruebas = 'terminalPruebas';
-  static const solicitudesEliminacionTerminal =
-      'solicitudesEliminacionTerminal';
   static const qrTokens = 'qrTokens';
   static const asistencias = 'asistencias';
   static const estadoAsistencia = 'estadoAsistencia';

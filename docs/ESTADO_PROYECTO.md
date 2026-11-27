@@ -187,18 +187,17 @@ Limitaciones que esto implica (no se simulan; requieren Blaze/servidor):
   restablecimiento de Firebase. Si el envío falla, el alta lo avisa y la ficha
   tiene "Reenviar enlace de contraseña". Plantilla y política de contraseñas
   viven en la consola de Auth (no se tocaron).
-- **Personal ≠ terminal:** `isTerminal()` exige que la cuenta NO tenga perfil en
-  `usuarios`; no se puede registrar como terminal una cuenta de personal ni
-  crear un perfil de personal sobre una terminal (con pruebas).
-- **Credenciales copiadas:** la tablet genera un secreto aleatorio en su
-  almacenamiento local y lo registra una sola vez en `terminalClaves/{uid}`
-  (ilegible desde cualquier cliente, sin actualización). Cada marcación escribe
-  `terminalPruebas/{uid}` con ese secreto y las reglas lo comparan; el token QR
-  no se consume sin esa prueba. Un segundo equipo con el mismo correo/contraseña
-  no puede enlazarse ni marcar. El Superadmin restablece el enlace desde
-  `/app/terminales` (cambio de tablet o sospecha de copia). Límite: el primer
-  equipo en iniciar sesión tras autorizar la terminal se enlaza; hacerlo en el
-  momento y desde la tablet real. No sustituye a App Check (Play Integrity).
+- **Sistema antiguo de terminales: RETIRADO (2026-11-27).** Se eliminaron del
+  código las pantallas (`/asistencia/terminal`, `/app/terminales`), el servicio de
+  administración, el enlace tablet↔dispositivo (`terminalClaves`,
+  `terminalPruebas`), las solicitudes de eliminación, la sesión
+  `TerminalAuthenticated` y el permiso `manageTerminals`. Las reglas ya no
+  contienen `isTerminal()` ni las colecciones `terminales`, `terminalClaves`,
+  `terminalPruebas` y `solicitudesEliminacionTerminal` (quedan cerradas por la
+  regla final `{document=**}`). Una cuenta sin perfil de personal queda sin acceso.
+  Los datos de esas colecciones y las cuentas de Authentication de las
+  terminales se eliminan **solo tras una auditoría y la aprobación expresa del
+  propietario** (ver `docs/RETIRO_CUENTAS_TERMINAL.md`).
 - **Auditoría de restablecimientos:** se registra, pero las reglas no pueden
   exigirla en un borrado.
 - Reglas validadas contra el proyecto real con
@@ -336,28 +335,36 @@ de MIUI/HyperOS, y fecha/hora del dispositivo.
 
 ### Asistencia por QR (`features/attendance`)
 
-Flujo:
+Flujo (corregido: **ni Mesero ni Cocina generan QR**):
 
-1. **Trabajador** (`/app/mi-asistencia`, todos los roles): "Generar QR de entrada /
-   salida" crea `qrTokens/{id}` (id aleatorio de 128 bits). El QR contiene solo
-   `GA1:<id>`, sin datos personales. Vigencia 45 s (contador en pantalla), un
-   solo uso. **Generar el QR no registra asistencia.** Ve su historial, turno y
-   puede enviar solicitudes de corrección.
-2. **Terminal Android** (`/asistencia/terminal`, `mobile_scanner`, una cámara):
-   cuenta de dispositivo autorizada en `terminales/{uid}`. Escanea, identifica
-   entrada/salida por el token y registra solo tras pasar las reglas. Muestra
-   confirmación (nombre de pila + hora del servidor, Lima) o el motivo del rechazo.
-3. **Servidor (reglas)**: terminal activa; trabajador activo; token sin usar y de
-   ≤ 45 s; tipo coherente (entrada ↔ sin jornada abierta; salida ↔ jornada
-   abierta del mismo registro); `entrada`/`salida` = `request.time`. Impide
-   entradas duplicadas, salidas sin entrada y reutilización de QR.
-4. El personal en su teléfono **no puede** marcar: `asistencias` y
-   `estadoAsistencia` solo se escriben desde terminales o por regularización
-   autorizada; el router solo deja a la terminal en `/asistencia/terminal` y
-   redirige al personal fuera de esa ruta.
-5. **Terminales** (`/app/terminales`, Superadmin): alta (crea la cuenta del
-   dispositivo con contraseña definida por el Superadmin), revocar y reactivar;
-   la revocación es efectiva en vivo (la sesión escucha `terminales/{uid}`).
+1. **Generadores** — solo Superadmin, Admin y Cajero (`/app/generar-qr`,
+   permiso `generateAttendanceQr`): muestran un QR que se renueva solo cada
+   30 s (`qrTokens/{id}`, id aleatorio de 128 bits; el QR contiene solo
+   `GA1:<id>`). Vigencia 45 s. El documento guarda `generadorUid`,
+   `generadorRol` y el nombre de pila. **Generarlo no registra asistencia.**
+2. **Escáneres** — Mesero, Cocina y Cajero (`/app/escanear-asistencia`,
+   permiso `scanAttendanceQr`, `mobile_scanner`): abren la cámara, leen el QR y
+   registran **su propia** entrada o salida. **No hay selección manual**: sin
+   jornada abierta es entrada; con jornada abierta, salida. Muestra la
+   confirmación con la hora del servidor (Lima) o el motivo del rechazo.
+3. **Quién puede escanear qué**: Mesero y Cocina, QR de Superadmin, Admin o
+   Cajero. El **Cajero solo QR de Admin o Superadmin** (nunca de otro Cajero).
+   Nadie escanea su propio QR. Admin y Superadmin no escanean (están exentos de
+   la condición de jornada).
+4. **Servidor (reglas)** — lo anterior se exige en `firestore.rules`, no solo
+   en la interfaz: escáner con perfil activo y rol permitido; QR de ≤ 45 s;
+   generador activo y con el mismo rol; entrada solo con jornada cerrada,
+   salida solo con la jornada abierta del mismo registro; `entrada`/`salida` =
+   `request.time`; el trabajador solo escribe lo suyo; un mismo QR no encadena
+   dos marcaciones seguidas (`estadoAsistencia.tokenId`). Un QR vigente lo
+   pueden escanear varias personas (no es de un solo uso por diseño: es el QR de
+   la estación; la vigencia corta limita el reenvío de capturas).
+5. `/app/mi-asistencia` (todos los roles) ya **no genera QR**: muestra jornada,
+   historial, turno y solicitudes de corrección, y enlaza al escáner o al
+   generador según el rol.
+6. **Terminales**: el sistema antiguo fue retirado por completo (ver arriba). Las
+   reglas ya no reconocen ninguna cuenta de dispositivo; los registros
+   históricos de asistencia y auditoría no se tocan.
 
 Administración (`/app/asistencia`, admin/superadmin):
 
@@ -388,8 +395,8 @@ trabajador).
 
 - `PermissionService`/`AppRoute`: permisos y rutas nuevos; la ruta de inicio de
   cada rol no cambia (hay prueba).
-- `sessionProvider`: si no hay perfil de personal, consulta `terminales/{uid}`
-  (`TerminalAuthenticated`). `AuthRedirect` y `SessionResolver` lo contemplan.
+- `sessionProvider`: solo el personal con perfil accede; una cuenta sin perfil
+  queda en `AccessDenied` (ya no existen sesiones de terminal).
 - `AppUser` suma `nombres`, `horarioId`, `puedeRegularizar` (opcionales).
 - `firestore.rules`: `usuarios` ya no es "solo lectura"; admite altas y
   ediciones validadas (jerarquía, formatos, unicidad, auditoría). Sigue siendo
@@ -450,3 +457,30 @@ trabajador).
 
 Lógica de pedidos, inventario, reportes, carta digital real, alta de personal
 desde la app.
+
+
+## Simulación de purga de terminales (2026-11-27)
+
+Herramienta `tools/purge_terminals_dryrun.js` (+ `tools/lib/terminal_purge_plan.js`, `tools/terminal_purge_plan.test.js`): solo lectura y único modo. Se usó antes de la purga real (ver más abajo).
+
+Respaldo y reverificación previos a la purga: `tools/prepare_purge_backup.js` (+ `tools/lib/terminal_purge_backup.js`), solo lectura. Se usó antes de la purga real.
+
+Purga real de terminales: ejecutor `tools/execute_terminal_purge.js` (+ `tools/lib/terminal_purge_exec.js`) implementado con protecciones y probado en emulador; **ejecutado el 2026-11-27: 38 de 38 elementos eliminados** y datos protegidos intactos (ver `docs/RETIRO_CUENTAS_TERMINAL.md`).
+
+## Revisión final de reglas de Firestore (2026-11-27)
+
+Revisión posterior a la purga de terminales. **No se desplegó nada, no hubo commit ni push.**
+
+**Local vs. publicado** (conjunto de reglas publicado `4fbf23ab-…`, actualizado el 2026-11-27 15:16 UTC, leído por la API de Firebase Rules en solo lectura): la única diferencia es el retiro del sistema de terminales. Las reglas publicadas aún tienen `isTerminal()`, la condición `!exists(terminales/{uid})` en la creación de perfiles y las colecciones `terminales`, `solicitudesEliminacionTerminal`, `terminalClaves` y `terminalPruebas`. Las locales no contienen nada de eso (solo un comentario explicativo); lo no declarado cae en la regla final `{document=**} → false`. El resto (≈1400 líneas) es idéntico.
+
+**Datos en vivo:** `listCollectionIds` sobre `la-granja-azul-app` devuelve solo `asistencias, auditoria, cajaActiva, cajas, carta, categorias, correos, descuentosInventario, documentos, estadoAsistencia, mesas, pagos, pedidos, qrTokens, usuarios`. No existe ninguna colección de terminales.
+
+**Pruebas (emulador Firestore + Auth, `npm run test:rules` en `tools/`, una sola corrida completa):** 556 pruebas, 553 correctas y 3 fallidas. Las 3 fallas eran de aislamiento de `tools/terminal_purge_plan.test.js` (no de las reglas): `terminal_purge_exec.test.js`, que corre antes, deja cuentas y documentos en los emuladores compartidos y la prueba de la simulación sembraba sobre ellos (`auth/uid-already-exists`, 33≠35 documentos, `qrTokens` no encontrado). Se corrigió añadiendo una limpieza (`wipe()`, solo emuladores) al inicio de su `seed()`, igual que ya hacía el otro archivo. Se volvieron a correr únicamente esos dos archivos: 13/13 correctas. Las otras 543 pruebas no se repitieron.
+
+Cobertura de reglas por área (todas correctas): autenticación, perfiles, roles y matriz de permisos (`permissions`, `personal`, `email_change`), asistencia QR (`asistencia`: generación, escaneo, rol del escáner, QR propio/vencido, duplicados, hora del servidor, regularización y que las cuentas de terminal restantes no puedan marcar, generar QR ni leer), carta, categorías y mesas (`rules`), pedidos y cocina (`orders`, `descuento`), reservaciones, caja (`caja`), inventario y costos (`inventario`, `utensilios`) y reportes.
+
+**Pendientes:** desplegar `firestore.rules` (requiere autorización del propietario). Tras desplegar, los clientes antiguos que aún usaran terminales quedarán sin acceso (ya sin cuentas ni datos).
+
+**Corrida final (2026-11-27, tras la corrección):** `npm run test:rules` completo, una sola vez: 556 pruebas, **556 correctas, 0 fallidas, 0 omitidas** (86,6 s). Las reglas no se modificaron en esta revisión. Estado: listo para desplegar, a la espera de autorización del propietario.
+
+**Despliegue (2026-11-27, 18:05 UTC):** autorizado por el propietario. `firebase deploy --only firestore:rules --project la-granja-azul-app`: compilación correcta (2 avisos de variables sin usar, líneas 151 y 600, sin efecto) y `released rules firestore.rules to cloud.firestore`. Conjunto publicado `548e7660-39ad-4bdb-9419-7507925e1bc5`; el anterior era `4fbf23ab-…`. Verificación posterior: el texto publicado es idéntico al local y su única mención de terminales es un comentario. No se desplegó Hosting, Functions ni otros recursos.

@@ -164,7 +164,6 @@ void main() {
 
     test('rutas no operativas del rol no exigen jornada', () {
       final s = shift(UserRole.superadmin, open: false);
-      expect(redirect.redirect(AppRoute.terminals.path, s), isNull);
       expect(redirect.redirect(AppRoute.audit.path, s), isNull);
     });
   });

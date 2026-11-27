@@ -268,8 +268,8 @@ test('con el correo sin verificar no hay acceso a datos, aunque el perfil esté 
   await assertFails(getDocs(collection(asUnverified('super'), 'usuarios')));
   await assertFails(altaBatch(asUnverified('admin'), 'admin', 'nuevo').commit());
   await assertFails(getDoc(doc(asUnverified('admin'), 'usuarios/mesero')));
-  await assertFails(setDoc(doc(asUnverified('mesero'), `qrTokens/${'a'.repeat(32)}`), {
-    uid: 'mesero', tipo: 'entrada', nombreMostrar: 'Mario', creadoEn: serverTimestamp(), usadoEn: null, terminalId: null,
+  await assertFails(setDoc(doc(asUnverified('super'), `qrTokens/${'a'.repeat(32)}`), {
+    generadorUid: 'super', generadorRol: 'superadmin', nombreMostrar: 'Sofia', creadoEn: serverTimestamp(),
   }));
 });
 

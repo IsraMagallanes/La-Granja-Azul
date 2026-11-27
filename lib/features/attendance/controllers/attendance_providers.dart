@@ -1,13 +1,10 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../staff/repositories/staff_repository.dart';
 import '../models/attendance_models.dart';
 import '../models/schedule.dart';
 import '../repositories/attendance_repositories.dart';
 import '../services/attendance_services.dart';
-import '../services/terminal_binding.dart';
-import 'terminal_providers.dart';
 
 /// Se sobrescriben en `main.dart` con las implementaciones de Firebase.
 final workerAttendanceRepositoryProvider = Provider<WorkerAttendanceRepository>(
@@ -16,9 +13,13 @@ final workerAttendanceRepositoryProvider = Provider<WorkerAttendanceRepository>(
   ),
 );
 
-final terminalScanRepositoryProvider = Provider<TerminalScanRepository>(
+final qrGenerationRepositoryProvider = Provider<QrGenerationRepository>(
   (ref) =>
-      throw UnimplementedError('terminalScanRepositoryProvider sin override'),
+      throw UnimplementedError('qrGenerationRepositoryProvider sin override'),
+);
+
+final qrScanRepositoryProvider = Provider<QrScanRepository>(
+  (ref) => throw UnimplementedError('qrScanRepositoryProvider sin override'),
 );
 
 final attendanceAdminRepositoryProvider = Provider<AttendanceAdminRepository>(
@@ -27,49 +28,20 @@ final attendanceAdminRepositoryProvider = Provider<AttendanceAdminRepository>(
   ),
 );
 
-final staffAccountCreatorProvider = Provider<StaffAccountCreator>(
-  (ref) => throw UnimplementedError('staffAccountCreatorProvider sin override'),
+final qrGenerationServiceProvider = Provider<QrGenerationService>(
+  (ref) => QrGenerationService(ref.watch(qrGenerationRepositoryProvider)),
 );
 
-final qrIssueServiceProvider = Provider<QrIssueService>(
-  (ref) => QrIssueService(ref.watch(workerAttendanceRepositoryProvider)),
+final attendanceSelfServiceProvider = Provider<AttendanceSelfService>(
+  (ref) => AttendanceSelfService(ref.watch(workerAttendanceRepositoryProvider)),
 );
 
-final deviceKeyStoreProvider = Provider<DeviceKeyStore>(
-  (ref) => SharedPrefsDeviceKeyStore(),
-);
-
-final terminalScanServiceProvider = Provider<TerminalScanService>(
-  (ref) => TerminalScanService(
-    ref.watch(terminalScanRepositoryProvider),
-    ref.watch(deviceKeyStoreProvider),
-  ),
-);
-
-final terminalBindingProvider = FutureProvider.family<BindingStatus, String>(
-  (ref, terminalUid) => TerminalBindingService(
-    ref.watch(deviceKeyStoreProvider),
-    ref.watch(terminalScanRepositoryProvider),
-  ).ensureBound(terminalUid),
-);
-
-final terminalAdminServiceProvider = Provider<TerminalAdminService>(
-  (ref) => TerminalAdminService(
-    ref.watch(terminalRepositoryProvider),
-    ref.watch(staffAccountCreatorProvider),
-  ),
+final attendanceScanServiceProvider = Provider<AttendanceScanService>(
+  (ref) => AttendanceScanService(ref.watch(qrScanRepositoryProvider)),
 );
 
 final attendanceAdminServiceProvider = Provider<AttendanceAdminService>(
   (ref) => AttendanceAdminService(ref.watch(attendanceAdminRepositoryProvider)),
-);
-
-final terminalsProvider = StreamProvider<List<AttendanceTerminal>>(
-  (ref) => ref.watch(terminalRepositoryProvider).watchAll(),
-);
-
-final terminalDeletionRequestsProvider = StreamProvider<Set<String>>(
-  (ref) => ref.watch(terminalRepositoryProvider).watchDeletionRequests(),
 );
 
 final schedulesProvider = StreamProvider<List<Schedule>>(
@@ -89,10 +61,6 @@ final myCorrectionsProvider =
       (ref, uid) =>
           ref.watch(workerAttendanceRepositoryProvider).watchCorrections(uid),
     );
-
-final tokenProvider = StreamProvider.family<QrToken?, String>(
-  (ref, id) => ref.watch(workerAttendanceRepositoryProvider).watchToken(id),
-);
 
 final allCorrectionsProvider = StreamProvider<List<CorrectionRequest>>(
   (ref) => ref.watch(attendanceAdminRepositoryProvider).watchAllCorrections(),

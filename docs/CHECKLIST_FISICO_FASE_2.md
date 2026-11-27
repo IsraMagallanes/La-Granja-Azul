@@ -4,7 +4,7 @@ Lo que las pruebas automatizadas **no** cubren: Firebase real y dispositivos rea
 
 **Requisito previo:** desplegar las reglas con autorización del propietario (`firebase deploy --only firestore`). Hasta entonces, contra Firebase real siguen las reglas anteriores: no existe la condición de asistencia ni la colección `solicitudesEliminacionTerminal`. Antes de desplegar, seguir el orden seguro de `docs/ESTADO_PROYECTO.md` (verificación del correo del Superadmin).
 
-Datos de prueba: un Superadmin, un Admin, un mesero y un cocinero reales (o de prueba) con la ficha completa, y una tablet con la terminal de asistencia autorizada.
+Datos de prueba: un Superadmin, un Admin, un mesero y un cocinero reales (o de prueba) con la ficha completa, y un celular por trabajador (la asistencia se registra escaneando el QR de Superadmin, Admin o Cajero; el sistema antiguo de terminales fue retirado) autorizada.
 
 ## 1. Asistencia como condición de acceso (Android + Firebase real)
 
@@ -12,10 +12,10 @@ Datos de prueba: un Superadmin, un Admin, un mesero y un cocinero reales (o de p
 |---|------|--------------------|----|
 | 1 | Mesero inicia sesión **sin** haber registrado entrada | Aterriza en «Mi asistencia» con el aviso «Registra tu entrada…». El menú no muestra Mesas, Pedidos ni Mesero | ☐ |
 | 2 | Mesero escribe a mano `/app/mesas` o `/app/pedidos` (web) | Lo devuelve a «Mi asistencia» | ☐ |
-| 3 | Mesero genera «QR de entrada» y lo muestra a la terminal | La terminal confirma con nombre y hora del servidor | ☐ |
+| 3 | Mesero abre «Escanear asistencia» y escanea el QR que muestra el Cajero o el Admin (sin elegir entrada/salida) | La app confirma «Entrada registrada» con la hora del servidor | ☐ |
 | 4 | Sin cerrar la app del mesero | En segundos aparecen Mesas y Pedidos en su menú, sin volver a iniciar sesión | ☐ |
 | 5 | Mesero abre una mesa y toma un pedido | Funciona (reglas de mesas y pedidos con la jornada abierta) | ☐ |
-| 6 | Mesero genera «QR de salida» y lo muestra a la terminal | Pierde el acceso en vivo: lo saca del módulo y desaparecen Mesas y Pedidos | ☐ |
+| 6 | Mesero vuelve a escanear un QR vigente (la app registra la salida sola) | Pierde el acceso en vivo: lo saca del módulo y desaparecen Mesas y Pedidos | ☐ |
 | 7 | Con la salida registrada, el mesero intenta leer pedidos (p. ej. recargando la web) | No puede leer ni escribir pedidos ni mesas | ☐ |
 | 8 | Cocinero: repetir 1, 3, 4 y 6 | Mismo comportamiento (su módulo es Cocina) | ☐ |
 | 9 | Admin y Superadmin inician sesión **sin** registrar entrada | Acceden a Dashboard, Mesas y Pedidos con normalidad | ☐ |
@@ -32,16 +32,7 @@ Datos de prueba: un Superadmin, un Admin, un mesero y un cocinero reales (o de p
 
 ## 3. Eliminación definitiva de una terminal
 
-| # | Paso | Resultado esperado | OK |
-|---|------|--------------------|----|
-| 15 | Superadmin abre Terminales → una terminal **activa** | No ofrece eliminar; primero hay que inhabilitarla | ☐ |
-| 16 | Inhabilitar la terminal → «Solicitar eliminación definitiva» | Mensaje «Aún no se ha eliminado»; la terminal muestra «Inhabilitada · eliminación solicitada» | ☐ |
-| 17 | Auditoría | Aparece `solicitar_eliminacion_terminal` a nombre del Superadmin | ☐ |
-| 18 | En el equipo del propietario: `node delete_terminal.js --pendientes` | Lista la solicitud (UID y nombre) | ☐ |
-| 19 | `node delete_terminal.js <uid>` (simulación) | Informa qué se elimina y qué se conserva; no cambia nada | ☐ |
-| 20 | `node delete_terminal.js <uid> --execute` y confirmar | Elimina cuenta de Authentication y documentos; la terminal desaparece de la app; las asistencias y la auditoría se conservan | ☐ |
-| 21 | Repetir 16 y luego **reactivar** la terminal antes del paso 18 | La solicitud se cancela y deja de mostrarse | ☐ |
-| 22 | Ejecutar el script sobre una terminal sin solicitud | Se niega (salvo `--sin-solicitud`) | ☐ |
+**Retirada (2026-11-27):** el sistema antiguo de terminales ya no existe en la app; se retiró junto con sus datos (ver `docs/RETIRO_CUENTAS_TERMINAL.md`). Estos pasos (15 a 22) quedan sin efecto.
 
 ## Notas
 

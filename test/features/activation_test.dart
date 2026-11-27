@@ -6,7 +6,6 @@ import 'package:granja_azul/core/error/app_failure.dart';
 import 'package:granja_azul/core/error/error_mapper.dart';
 import 'package:granja_azul/core/routing/app_routes.dart';
 import 'package:granja_azul/core/routing/auth_redirect.dart';
-import 'package:granja_azul/features/attendance/models/attendance_models.dart';
 import 'package:granja_azul/features/auth/controllers/auth_providers.dart';
 import 'package:granja_azul/features/auth/models/session_state.dart';
 import 'package:granja_azul/features/auth/services/activation_tracker.dart';
@@ -58,14 +57,6 @@ void main() {
 
     test('sin perfil se rechaza', () {
       expect(SessionResolver.fromProfile(null), isA<AccessDenied>());
-    });
-
-    test('las terminales no necesitan correo verificado', () {
-      const t = AttendanceTerminal(uid: 't', nombre: 'Tablet', activo: true);
-      expect(
-        SessionResolver.fromAccount(null, t, emailVerified: false),
-        isA<TerminalAuthenticated>(),
-      );
     });
 
     test('la sesión sin verificar solo puede estar en /verificar-correo', () {

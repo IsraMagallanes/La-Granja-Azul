@@ -2,13 +2,8 @@ import '../../users/models/app_user.dart';
 import '../models/attendance_models.dart';
 import '../models/schedule.dart';
 
-/// App del trabajador: genera su QR y consulta su propia asistencia.
+/// App del personal: consulta su propia asistencia y pide correcciones.
 abstract interface class WorkerAttendanceRepository {
-  /// Crea un token de un solo uso (vigencia [QrToken.lifetime]). No registra
-  /// asistencia: solo la terminal autorizada puede hacerlo.
-  Future<QrToken> createToken(AppUser worker, PunchType type, String tokenId);
-
-  Stream<QrToken?> watchToken(String tokenId);
   Stream<AttendanceState?> watchState(String uid);
   Stream<List<AttendanceRecord>> watchHistory(String uid, {int limit = 30});
   Stream<List<CorrectionRequest>> watchCorrections(String uid);
@@ -21,22 +16,25 @@ abstract interface class WorkerAttendanceRepository {
   });
 }
 
-/// Terminal del restaurante: consume el QR contra el servidor.
-abstract interface class TerminalScanRepository {
+/// Generador del QR (Superadmin, Admin, Cajero). Generarlo NO registra
+/// asistencia de nadie.
+abstract interface class QrGenerationRepository {
+  /// Crea un token vigente [QrToken.lifetime] a nombre de [generator].
+  Future<QrToken> createToken(AppUser generator, String tokenId);
+}
+
+/// Escáner del QR (Mesero, Cocina, Cajero): registra SU entrada o salida.
+abstract interface class QrScanRepository {
   Future<QrToken?> fetchToken(String tokenId);
   Future<AttendanceState?> fetchState(String uid);
 
-  /// Registra (una sola vez) el secreto que enlaza esta cuenta de terminal
-  /// con el dispositivo. Falla si ya existe uno.
-  Future<void> enroll({required String terminalUid, required String key});
-
-  /// Registra la entrada o salida de forma atómica con la hora del servidor y
-  /// devuelve esa hora. Lanza si las reglas del servidor lo rechazan.
+  /// Registra de forma atómica la entrada o salida de [uid] con la hora del
+  /// servidor y la devuelve. Lanza si las reglas del servidor lo rechazan.
   Future<DateTime> commit({
     required QrToken token,
+    required String uid,
+    required PunchType type,
     required AttendanceState? state,
-    required String terminalUid,
-    required String deviceKey,
   });
 }
 
@@ -78,33 +76,3 @@ abstract interface class AttendanceAdminRepository {
   });
 }
 
-/// Alta, consulta y revocación de terminales (solo Superadmin).
-abstract interface class TerminalRepository {
-  /// Perfil de terminal del usuario autenticado, si lo es.
-  Stream<AttendanceTerminal?> watchTerminal(String uid);
-  Stream<List<AttendanceTerminal>> watchAll();
-
-  Future<void> authorize(
-    AppUser actor, {
-    required String nombre,
-    required String uid,
-  });
-  Future<void> setActive(
-    AppUser actor,
-    AttendanceTerminal terminal, {
-    required bool active,
-  });
-
-  /// Borra el secreto del dispositivo: la terminal podrá enlazarse de nuevo
-  /// (p. ej. tablet reemplazada o credenciales comprometidas).
-  Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal);
-
-  /// UID de las terminales con una solicitud de eliminación definitiva
-  /// pendiente (la procesa el script local `tools/delete_terminal.js`).
-  Stream<Set<String>> watchDeletionRequests();
-
-  /// Registra, con auditoría, la solicitud de eliminar definitivamente una
-  /// terminal ya inhabilitada. No elimina nada: la cuenta de acceso solo se
-  /// puede borrar con el Admin SDK.
-  Future<void> requestDeletion(AppUser actor, AttendanceTerminal terminal);
-}

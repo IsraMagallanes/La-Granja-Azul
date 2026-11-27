@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:granja_azul/core/error/app_failure.dart';
 import 'package:granja_azul/features/attendance/models/attendance_models.dart';
 import 'package:granja_azul/features/attendance/repositories/attendance_repositories.dart';
-import 'package:granja_azul/features/attendance/services/terminal_binding.dart';
+import 'package:granja_azul/features/attendance/services/scan_validator.dart';
 import 'package:granja_azul/features/roles/models/user_role.dart';
 import 'package:granja_azul/features/staff/models/document_type.dart';
 import 'package:granja_azul/features/staff/models/rehire_restriction.dart';
@@ -174,38 +174,17 @@ class FakeRestrictionRepository implements RestrictionRepository {
 }
 
 class FakeWorkerAttendanceRepository implements WorkerAttendanceRepository {
-  final tokensCreated = <(PunchType, String)>[];
   final corrections = <String>[];
 
   /// Estado de jornada por trabajador (`estadoAsistencia/{uid}`).
   final states = <String, AttendanceState>{};
   final _stateChanges = StreamController<void>.broadcast();
 
-  /// Simula que la terminal registró la entrada (`open`) o la salida.
+  /// Simula que el trabajador registró la entrada (`open`) o la salida.
   void setShift(String uid, {required bool open}) {
     states[uid] = AttendanceState(abierta: open, asistenciaId: 'a-$uid');
     _stateChanges.add(null);
   }
-
-  @override
-  Future<QrToken> createToken(
-    AppUser worker,
-    PunchType type,
-    String tokenId,
-  ) async {
-    tokensCreated.add((type, tokenId));
-    return QrToken(
-      id: tokenId,
-      uid: worker.uid,
-      tipo: type,
-      nombreMostrar: worker.nombres,
-      creadoEn: DateTime.now(),
-      usadoEn: null,
-    );
-  }
-
-  @override
-  Stream<QrToken?> watchToken(String tokenId) => Stream.value(null);
 
   @override
   Stream<AttendanceState?> watchState(String uid) async* {
@@ -234,14 +213,34 @@ class FakeWorkerAttendanceRepository implements WorkerAttendanceRepository {
   }
 }
 
-/// Simula al servidor: aplica las mismas reglas que `firestore.rules`.
-class FakeTerminalScanRepository implements TerminalScanRepository {
+/// Generación de QR en memoria.
+class FakeQrGenerationRepository implements QrGenerationRepository {
+  final created = <QrToken>[];
+
+  @override
+  Future<QrToken> createToken(AppUser generator, String tokenId) async {
+    final token = QrToken(
+      id: tokenId,
+      generadorUid: generator.uid,
+      generadorRol: generator.role,
+      nombreMostrar: generator.nombres,
+      creadoEn: DateTime.now(),
+    );
+    created.add(token);
+    return token;
+  }
+}
+
+/// Simula al servidor del escaneo: aplica las mismas reglas que
+/// `firestore.rules` (el generador permitido para el rol del escáner, un QR no
+/// encadenado, entrada única y salida con entrada abierta).
+class FakeQrScanRepository implements QrScanRepository {
   final tokens = <String, QrToken>{};
   final states = <String, AttendanceState>{};
   final commits = <String>[];
 
-  /// Secreto registrado en el servidor (`terminalClaves`); lo comparan las reglas.
-  String? enrolledKey;
+  /// Roles de los escáneres (el servidor los conoce por el perfil).
+  final roles = <String, UserRole>{};
 
   /// Si es `true`, el servidor rechaza la escritura (QR vencido, etc.).
   bool serverRejects = false;
@@ -254,137 +253,31 @@ class FakeTerminalScanRepository implements TerminalScanRepository {
   Future<AttendanceState?> fetchState(String uid) async => states[uid];
 
   @override
-  Future<void> enroll({
-    required String terminalUid,
-    required String key,
-  }) async {
-    if (enrolledKey != null) {
-      throw const AppFailure('ya enlazada', code: 'permission-denied');
-    }
-    enrolledKey = key;
-  }
-
-  @override
   Future<DateTime> commit({
     required QrToken token,
+    required String uid,
+    required PunchType type,
     required AttendanceState? state,
-    required String terminalUid,
-    required String deviceKey,
   }) async {
-    if (serverRejects || (enrolledKey != null && deviceKey != enrolledKey)) {
+    final role = roles[uid];
+    final stored = states[uid];
+    final open = stored?.abierta ?? false;
+    if (serverRejects ||
+        role == null ||
+        !const QrPolicy().canScanFrom(role, token.generadorRol) ||
+        token.generadorUid == uid ||
+        stored?.tokenId == token.id ||
+        (type == PunchType.entrada) == open) {
       throw const AppFailure('rechazado', code: 'permission-denied');
     }
-    final live = tokens[token.id]!;
-    if (live.used) {
-      throw const AppFailure('usado', code: 'permission-denied');
-    }
-    tokens[token.id] = QrToken(
-      id: live.id,
-      uid: live.uid,
-      tipo: live.tipo,
-      nombreMostrar: live.nombreMostrar,
-      creadoEn: live.creadoEn,
-      usadoEn: serverTime,
+    states[uid] = AttendanceState(
+      abierta: type == PunchType.entrada,
+      asistenciaId: stored?.asistenciaId ?? 'asis-${commits.length}',
+      tokenId: token.id,
     );
-    states[token.uid] = AttendanceState(
-      abierta: token.tipo == PunchType.entrada,
-      asistenciaId: 'asis-${commits.length}',
-    );
-    commits.add('${token.tipo.value}:${token.uid}');
+    commits.add('${type.value}:$uid');
     return serverTime;
   }
-}
-
-class FakeTerminalRepository implements TerminalRepository {
-  final terminals = <String, AttendanceTerminal>{};
-  final _changes = StreamController<void>.broadcast();
-
-  /// Terminales con enlace de dispositivo vigente (`terminalClaves`).
-  final linked = <String>{};
-
-  final resets = <String>[];
-
-  /// Solicitudes de eliminación definitiva registradas desde la app.
-  final deletionRequests = <String>{};
-
-  /// Si no es `null`, las operaciones de escritura fallan con este error.
-  Object? failWith;
-
-  /// Si no es `null`, las operaciones de escritura esperan a este completer.
-  Completer<void>? gate;
-
-  /// Simula un cambio hecho fuera de la app (p. ej. el script de eliminación).
-  void notify() => _changes.add(null);
-
-  Future<void> _write(void Function() change) async {
-    await gate?.future;
-    if (failWith != null) throw failWith!;
-    change();
-    _changes.add(null);
-  }
-
-  @override
-  Stream<AttendanceTerminal?> watchTerminal(String uid) async* {
-    yield terminals[uid];
-    await for (final _ in _changes.stream) {
-      yield terminals[uid];
-    }
-  }
-
-  @override
-  Stream<List<AttendanceTerminal>> watchAll() async* {
-    yield terminals.values.toList();
-    await for (final _ in _changes.stream) {
-      yield terminals.values.toList();
-    }
-  }
-
-  @override
-  Future<void> authorize(
-    AppUser actor, {
-    required String nombre,
-    required String uid,
-  }) => _write(
-    () => terminals[uid] = AttendanceTerminal(
-      uid: uid,
-      nombre: nombre,
-      activo: true,
-    ),
-  );
-
-  @override
-  Future<void> setActive(
-    AppUser actor,
-    AttendanceTerminal terminal, {
-    required bool active,
-  }) => _write(() {
-    terminals[terminal.uid] = AttendanceTerminal(
-      uid: terminal.uid,
-      nombre: terminal.nombre,
-      activo: active,
-    );
-    if (!active) linked.remove(terminal.uid);
-    if (active) deletionRequests.remove(terminal.uid);
-  });
-
-  @override
-  Future<void> resetDeviceLink(AppUser actor, AttendanceTerminal terminal) =>
-      _write(() {
-        resets.add(terminal.uid);
-        linked.remove(terminal.uid);
-      });
-
-  @override
-  Stream<Set<String>> watchDeletionRequests() async* {
-    yield {...deletionRequests};
-    await for (final _ in _changes.stream) {
-      yield {...deletionRequests};
-    }
-  }
-
-  @override
-  Future<void> requestDeletion(AppUser actor, AttendanceTerminal terminal) =>
-      _write(() => deletionRequests.add(terminal.uid));
 }
 
 class FakePendingAccount implements PendingAccount {
@@ -416,20 +309,4 @@ class FakeAccountCreator implements StaffAccountCreator {
     accounts.add(account);
     return account;
   }
-}
-
-class FakeDeviceKeyStore implements DeviceKeyStore {
-  FakeDeviceKeyStore([Map<String, String>? initial]) : keys = {...?initial};
-
-  final Map<String, String> keys;
-
-  @override
-  Future<String?> read(String terminalUid) async => keys[terminalUid];
-
-  @override
-  Future<void> write(String terminalUid, String key) async =>
-      keys[terminalUid] = key;
-
-  @override
-  Future<void> clear(String terminalUid) async => keys.remove(terminalUid);
 }

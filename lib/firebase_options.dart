@@ -33,10 +33,7 @@ class DefaultFirebaseOptions {
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -50,6 +47,17 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyBRMP0dwOuU0UnkkqA4mQlU6Fn-7I44Zjg',
+    appId: '1:56647616323:web:81de814f00013928e6d1f6',
+    messagingSenderId: '56647616323',
+    projectId: 'la-granja-azul-app',
+    authDomain: 'la-granja-azul-app.firebaseapp.com',
+    storageBucket: 'la-granja-azul-app.firebasestorage.app',
+  );
+
+  /// Windows usa la app Web registrada: Firebase no tiene plataforma Windows
+  /// propia y el SDK de escritorio solo necesita apiKey/appId/projectId.
+  static const FirebaseOptions windows = FirebaseOptions(
     apiKey: 'AIzaSyBRMP0dwOuU0UnkkqA4mQlU6Fn-7I44Zjg',
     appId: '1:56647616323:web:81de814f00013928e6d1f6',
     messagingSenderId: '56647616323',

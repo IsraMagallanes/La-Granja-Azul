@@ -240,9 +240,25 @@
         "cocina",
         "cajero"
       ],
+      "create": [],
+      "update": [],
+      "delete": [],
+      "special": []
+    },
+    "qrGenerate": {
+      "read": [],
       "create": [
         "superadmin",
         "admin",
+        "cajero"
+      ],
+      "update": [],
+      "delete": [],
+      "special": []
+    },
+    "qrScan": {
+      "read": [],
+      "create": [
         "mesero",
         "cocina",
         "cajero"
@@ -250,21 +266,6 @@
       "update": [],
       "delete": [],
       "special": []
-    },
-    "terminals": {
-      "read": [
-        "superadmin"
-      ],
-      "create": [
-        "superadmin"
-      ],
-      "update": [
-        "superadmin"
-      ],
-      "delete": [],
-      "special": [
-        "superadmin"
-      ]
     },
     "restrictions": {
       "read": [

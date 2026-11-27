@@ -131,7 +131,7 @@ void main() {
         attendance.setShift(
           'u1',
           open: true,
-        ); // la terminal registra la entrada
+        ); // el trabajador registra su entrada escaneando el QR
         await tester.pumpAndSettle();
         // Sigue en «Mi asistencia»; ya puede entrar a sus módulos.
         expect(find.text('Mesas'), findsWidgets);

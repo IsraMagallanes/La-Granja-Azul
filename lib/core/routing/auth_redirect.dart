@@ -34,10 +34,6 @@ class AuthRedirect {
         route == AppRoute.accessDenied ? null : AppRoute.accessDenied.path,
       EmailUnverified() =>
         route == AppRoute.verifyEmail ? null : AppRoute.verifyEmail.path,
-      TerminalAuthenticated() =>
-        route == AppRoute.attendanceTerminal
-            ? null
-            : AppRoute.attendanceTerminal.path,
       Authenticated(:final user, :final onShift) => _forUser(
         route,
         user.role,

@@ -18,6 +18,9 @@ const matrix = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'fixtures', 'permission_matrix.json'), 'utf8'));
 const exempt = new Set(matrix.shiftExemptRoles);
 const ROLE_UID = { superadmin: 'super', admin: 'admin', mesero: 'w1', cocina: 'k', cajero: 'cash' };
+const UID_ROLE = Object.fromEntries(Object.entries(ROLE_UID).map(([r, u]) => [u, r]));
+const QR = 'e'.repeat(32); // QR vigente generado por el Admin
+const QR_SALIDA = 'f'.repeat(32);
 
 let env;
 const host = (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8180').split(':');
@@ -37,7 +40,15 @@ async function seed(shift = 'open') {
       await setDoc(doc(db, 'usuarios', uid), { rol, nombre: `Usuario ${uid}`, nombres: `N${uid}`, activo: true });
       if (!exempt.has(rol) && shift !== 'none') {
         await setDoc(doc(db, 'estadoAsistencia', uid), { abierta: shift === 'open', asistenciaId: `a-${uid}` });
+        if (shift === 'open') {
+          await setDoc(doc(db, 'asistencias', `a-${uid}`), { uid, entrada: Timestamp.fromMillis(Date.now() - 3600_000),
+            salida: null, origen: 'qr', tokenId: 'old', regularizada: false });
+        }
       }
+    }
+    for (const id of [QR, QR_SALIDA]) {
+      await setDoc(doc(db, 'qrTokens', id), { generadorUid: 'admin', generadorRol: 'admin', nombreMostrar: 'Nadmin',
+        creadoEn: Timestamp.now() });
     }
     await setDoc(doc(db, 'usuarios', 'w2'), { rol: 'mesero', nombre: 'Usuario w2', nombres: 'Nw2', activo: true });
     await setDoc(doc(db, 'categorias/aves'), { nombre: 'Aves', activo: true });
@@ -52,7 +63,6 @@ async function seed(shift = 'open') {
     await setDoc(doc(db, 'pedidos/reg1'), { mesaId: '2', meseroId: 'w2', meseroNombre: 'Usuario w2',
       estado: 'registrado', estadoCocina: 'pendiente', revision: 1, cantidadDetalles: 1, detalleModificado: 'p',
       creadoEn: Timestamp.now(), registradoEn: Timestamp.now(), actualizadoEn: Timestamp.now() });
-    await setDoc(doc(db, 'terminales/term1'), { nombre: 'Tablet', activo: false });
     await setDoc(doc(db, 'restricciones/12345678'), { estado: 'activa' });
   });
 }
@@ -98,15 +108,15 @@ const ops = {
     { estado: 'confirmada', actualizadoEn: serverTimestamp() }),
   'attendance.read': (d) => getDocs(collection(d, 'estadoAsistencia')),
   'selfAttendance.read': (d, uid) => getDoc(doc(d, 'estadoAsistencia', uid)),
-  'selfAttendance.create': (d, uid) => setDoc(doc(d, 'qrTokens', 'a'.repeat(32)),
-    { uid, tipo: 'entrada', nombreMostrar: `N${uid}`, creadoEn: serverTimestamp(), usadoEn: null, terminalId: null }),
-  'terminals.read': (d) => getDocs(collection(d, 'terminales')),
-  'terminals.special': (d, uid) => {
+  // Generar el QR: solo Superadmin, Admin y Cajero.
+  'qrGenerate.create': (d, uid) => setDoc(doc(d, 'qrTokens', 'a'.repeat(32)),
+    { generadorUid: uid, generadorRol: UID_ROLE[uid], nombreMostrar: `N${uid}`, creadoEn: serverTimestamp() }),
+  // Escanear el QR (salida de la jornada abierta): solo Mesero, Cocina y Cajero.
+  'qrScan.create': (d, uid) => {
     const batch = writeBatch(d);
-    batch.set(doc(d, 'auditoria', 'aud1'), { accion: 'solicitar_eliminacion_terminal', actorUid: uid,
-      actorNombre: `Usuario ${uid}`, objetivo: 'term1', campos: [], creadoEn: serverTimestamp() });
-    batch.set(doc(d, 'solicitudesEliminacionTerminal', 'term1'), { nombre: 'Tablet', solicitadoPor: uid,
-      solicitadoEn: serverTimestamp(), ultimaAuditoriaId: 'aud1' });
+    batch.update(doc(d, 'asistencias', `a-${uid}`), { salida: serverTimestamp(), salidaTokenId: QR_SALIDA });
+    batch.set(doc(d, 'estadoAsistencia', uid), { abierta: false, asistenciaId: `a-${uid}`,
+      actualizadoEn: serverTimestamp(), tokenId: QR_SALIDA });
     return batch.commit();
   },
   'cashier.read': (d) => getDocs(collection(d, 'pagos')),
@@ -146,8 +156,6 @@ const COVERED_ELSEWHERE = {
   'utensils.update': 'utensilios.rules.test.js (catálogo con auditoría, existencias y asignaciones)',
   'attendance.update': 'asistencia.rules.test.js (horarios y regularización)',
   'selfAttendance.update': 'sin acción concedida',
-  'terminals.create': 'asistencia.rules.test.js (alta de terminales)',
-  'terminals.update': 'asistencia.rules.test.js (revocar y reactivar)',
   'restrictions.create': 'personal.rules.test.js (restricciones)',
   'restrictions.update': 'personal.rules.test.js (restricciones)',
 };
@@ -210,12 +218,13 @@ for (const shift of ['none', 'closed']) {
   }
 }
 
-test('sin entrada el personal conserva «Mi asistencia» (ver estado y generar su QR)', async () => {
+test('sin entrada el personal conserva «Mi asistencia» y los generadores generan el QR sin jornada abierta', async () => {
   for (const shift of ['none', 'closed']) {
     for (const [role, uid] of Object.entries(ROLE_UID)) {
       await seed(shift);
       await assertSucceeds(ops['selfAttendance.read'](as(uid), uid));
-      await assertSucceeds(ops['selfAttendance.create'](as(uid), uid));
+      const generate = ops['qrGenerate.create'](as(uid), uid);
+      await (matrix.modules.qrGenerate.create.includes(role) ? assertSucceeds(generate) : assertFails(generate));
     }
   }
 });
@@ -255,21 +264,4 @@ test('un mesero con jornada abierta no puede crearse su propio estado de jornada
   await seed('none');
   await assertFails(setDoc(doc(as('w1'), 'estadoAsistencia', 'w1'), { abierta: true, asistenciaId: 'x', actualizadoEn: serverTimestamp() }));
   await assertFails(getDoc(doc(as('w1'), 'pedidos', 'seed')));
-});
-
-test('solicitud de eliminación de terminal: solo con la terminal inhabilitada, inmutable, la cancela el Superadmin', async () => {
-  await seed('open');
-  await assertSucceeds(ops['terminals.special'](as('super'), 'super'));
-  const sup = as('super');
-  const request = doc(sup, 'solicitudesEliminacionTerminal', 'term1');
-  await assertSucceeds(getDoc(request));
-  await assertFails(updateDoc(request, { nombre: 'Otra' }));
-  await assertFails(getDoc(doc(as('admin'), 'solicitudesEliminacionTerminal', 'term1')));
-  await assertFails(deleteDoc(doc(as('admin'), 'solicitudesEliminacionTerminal', 'term1')));
-  await assertSucceeds(deleteDoc(request));
-
-  // Con la terminal activa no se puede solicitar.
-  await env.withSecurityRulesDisabled((ctx) =>
-    updateDoc(doc(ctx.firestore(), 'terminales', 'term1'), { activo: true }));
-  await assertFails(ops['terminals.special'](as('super'), 'super'));
 });

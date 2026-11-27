@@ -36,7 +36,8 @@ class PermissionService {
     AppModule.utensils: {_r, _c, _u, _s},
     AppModule.reports: {_r},
     AppModule.attendance: {_r, _u},
-    AppModule.selfAttendance: {_r, _c},
+    AppModule.selfAttendance: {_r},
+    AppModule.qrGenerate: {_c},
     // Solo consulta: el Admin ve el estado de una restricción como aviso.
     AppModule.restrictions: {_r},
   };
@@ -46,7 +47,6 @@ class PermissionService {
       ..._adminGrants,
       AppModule.staff: {_r, _c, _u, _s},
       AppModule.roles: {_r},
-      AppModule.terminals: {_r, _c, _u, _s},
       AppModule.restrictions: {_r, _c, _u},
       AppModule.audit: {_r},
     },
@@ -57,21 +57,26 @@ class PermissionService {
       AppModule.utensils: {_r, _c},
       AppModule.orders: {_r, _c, _u},
       AppModule.reservations: {_r, _c, _u},
-      AppModule.selfAttendance: {_r, _c},
+      AppModule.selfAttendance: {_r},
+      AppModule.qrScan: {_c},
     },
     UserRole.cocina: {
       AppModule.kitchen: {_r, _u},
       // Sin costos: su acción especial (_s) es solo de la administración.
       AppModule.supplies: {_r, _c, _u},
       AppModule.orders: {_r},
-      AppModule.selfAttendance: {_r, _c},
+      AppModule.selfAttendance: {_r},
+      AppModule.qrScan: {_c},
     },
     UserRole.cajero: {
       AppModule.cashier: {_r, _c, _u},
       AppModule.orders: {_r},
       AppModule.tables: {_r},
       AppModule.reservations: {_r},
-      AppModule.selfAttendance: {_r, _c},
+      AppModule.selfAttendance: {_r},
+      // Genera QR y también escanea (solo QR de Admin o Superadmin).
+      AppModule.qrGenerate: {_c},
+      AppModule.qrScan: {_c},
     },
   };
 
