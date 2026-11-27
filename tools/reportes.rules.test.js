@@ -26,7 +26,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
-    for (const [uid, rol] of Object.entries({ admin: 'admin', super: 'superadmin', w1: 'mesero', k: 'cocina', cash: 'cajero', stock: 'almacen' })) {
+    for (const [uid, rol] of Object.entries({ admin: 'admin', super: 'superadmin', w1: 'mesero', k: 'cocina', cash: 'cajero' })) {
       await setDoc(doc(d, 'usuarios', uid), { rol, nombre: `Usuario ${uid}`, activo: true });
       await setDoc(doc(d, 'estadoAsistencia', uid), { abierta: true, asistenciaId: `a${uid}` });
     }
@@ -53,15 +53,15 @@ test('Admin y Superadmin ejecutan las consultas de los reportes', async () => {
 });
 
 test('mesero, cocina y almacén no leen las ventas', async () => {
-  for (const uid of ['w1', 'k', 'stock']) {
+  for (const uid of ['w1', 'k']) {
     await assertFails(range(db(uid), 'pagos', 'creadoEn'));
   }
 });
 
-test('mesero y cocina no leen compras, movimientos de inventario ni asistencia ajena', async () => {
+test('mesero y cajero no leen movimientos de inventario; ni ellos ni cocina leen compras ni asistencia ajena', async () => {
   for (const uid of ['w1', 'k', 'cash']) {
     await assertFails(range(db(uid), 'compras', 'recibidoEn'));
-    await assertFails(range(db(uid), 'movimientosInventario', 'creadoEn'));
+    if (uid !== 'k') await assertFails(range(db(uid), 'movimientosInventario', 'creadoEn')); // Cocina los lee (insumos)
     await assertFails(range(db(uid), 'asistencias', 'entrada'));
   }
 });

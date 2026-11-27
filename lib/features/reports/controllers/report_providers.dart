@@ -38,13 +38,14 @@ final dishReportProvider = FutureProvider.autoDispose
         for (final p in used) p.orderId,
       ]);
       final recipes = await ref.watch(recipesProvider.future);
-      final supplies = await ref.watch(suppliesProvider.future);
+      // Reportes: solo Admin/Superadmin, únicos que leen los costos.
+      final costs = await ref.watch(supplyCostsProvider.future);
       return DishReport.build(
         items,
         orders: used.length,
         truncated: payments.length > maxDishOrders,
         recipes: {for (final x in recipes) x.dishId: x},
-        supplies: {for (final s in supplies) s.id: s},
+        costs: costs,
       );
     }, retry: (_, _) => null);
 
@@ -65,8 +66,10 @@ final inventoryReportProvider = FutureProvider.autoDispose
       final purchases = await repository.receivedPurchases(r.from, r.to);
       final movements = await repository.stockMovements(r.from, r.to);
       final supplies = await ref.watch(suppliesProvider.future);
+      final costs = await ref.watch(supplyCostsProvider.future);
       return InventoryReport.build(
         supplies: supplies,
+        costs: costs,
         receivedPurchases: purchases,
         movements: movements,
       );

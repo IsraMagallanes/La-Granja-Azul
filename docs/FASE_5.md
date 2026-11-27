@@ -41,7 +41,6 @@ Se conserva el requisito de fase 3: perfil activo **y correo verificado**.
 | Admin / Superadmin | Crear, editar capacidad, activar/desactivar; abrir pedidos | Consultar todos; gestionar cualquier pedido abierto; responsable original inmutable |
 | Cajero | Consultar | Consulta de pedidos y detalles; sin escritura |
 | Cocina | Sin gestión de mesas | Consulta de pedidos y detalles; sin escritura |
-| Almacén | Sin acceso | Sin acceso |
 | Anónimo / perfil inactivo / correo no verificado | Sin acceso | Sin acceso |
 
 La carta `/carta` continúa pública. Los permisos del resto de módulos permanecen intactos. No se reasignan responsables ni roles automáticamente.

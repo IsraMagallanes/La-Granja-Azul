@@ -70,4 +70,6 @@ abstract final class AuditAction {
   static const guardarHorario = 'guardar_horario';
   static const regularizarAsistencia = 'regularizar_asistencia';
   static const resolverCorreccion = 'resolver_correccion';
+  static const crearUtensilio = 'crear_utensilio';
+  static const editarUtensilio = 'editar_utensilio';
 }

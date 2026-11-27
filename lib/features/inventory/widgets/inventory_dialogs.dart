@@ -128,11 +128,6 @@ class _SupplyDialogState extends ConsumerState<SupplyDialog> {
   late final _min = TextEditingController(
     text: widget.supply == null ? '' : Qty.format(widget.supply!.minStock),
   );
-  late final _cost = TextEditingController(
-    text: widget.supply == null
-        ? ''
-        : (widget.supply!.unitCost / 100).toStringAsFixed(2),
-  );
   late SupplyUnit _unit = widget.supply?.unit ?? SupplyUnit.kg;
   late bool _active = widget.supply?.active ?? true;
 
@@ -140,23 +135,20 @@ class _SupplyDialogState extends ConsumerState<SupplyDialog> {
   void dispose() {
     _name.dispose();
     _min.dispose();
-    _cost.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final service = ref.read(inventoryServiceProvider);
     final min = Qty.parse(_min.text)!;
-    final cost = Money.parse(_cost.text)!;
     final supply = widget.supply;
     if (supply == null) {
-      await service.createSupply(_name.text, _unit, min, cost);
+      await service.createSupply(_name.text, _unit, min);
     } else {
       await service.editSupply(
         supply,
         name: _name.text,
         minStock: min,
-        unitCost: cost,
         active: _active,
       );
     }
@@ -197,17 +189,6 @@ class _SupplyDialogState extends ConsumerState<SupplyDialog> {
             ),
             validator: (v) => Qty.validate(v, allowZero: true),
           ),
-          TextFormField(
-            controller: _cost,
-            // El costo de un insumo existente lo corrige solo la administración;
-            // Almacén lo actualiza al recibir compras.
-            readOnly: widget.supply != null && !actorIsAdminOf(ref),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Costo por ${_unit.label} (S/)',
-            ),
-            validator: (v) => Money.validate(v, allowZero: true),
-          ),
           if (widget.supply != null)
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -216,6 +197,55 @@ class _SupplyDialogState extends ConsumerState<SupplyDialog> {
               onChanged: (v) => setState(() => _active = v),
             ),
         ],
+      ),
+    ),
+  );
+}
+
+/// Costo de un insumo. Solo Admin y Superadmin (el costo vive aparte, en
+/// `costosInsumos`; Cocina no lo lee). 0 = costo no registrado.
+class SupplyCostDialog extends ConsumerStatefulWidget {
+  const SupplyCostDialog({super.key, required this.supply, required this.cost});
+  final Supply supply;
+  final int cost;
+  @override
+  ConsumerState<SupplyCostDialog> createState() => _SupplyCostDialogState();
+}
+
+class _SupplyCostDialogState extends ConsumerState<SupplyCostDialog> {
+  final _form = GlobalKey<FormState>();
+  late final _cost = TextEditingController(
+    text: (widget.cost / 100).toStringAsFixed(2),
+  );
+
+  @override
+  void dispose() {
+    _cost.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ActionDialog(
+    title: 'Costo · ${widget.supply.name}',
+    validate: () => _form.currentState!.validate(),
+    onSubmit: () => ref
+        .read(inventoryServiceProvider)
+        .setSupplyCost(
+          widget.supply,
+          Money.parse(_cost.text)!,
+          actorUid: actorUidOf(ref),
+        ),
+    content: Form(
+      key: _form,
+      child: TextFormField(
+        controller: _cost,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: 'Costo por ${widget.supply.unit.label} (S/)',
+          helperText: '0 = costo no registrado.',
+        ),
+        validator: (v) => Money.validate(v, allowZero: true),
       ),
     ),
   );
@@ -425,14 +455,17 @@ class _PurchaseDialogState extends ConsumerState<PurchaseDialog> {
     final free = widget.supplies.where((s) => s.active && !used.contains(s.id));
     if (free.isEmpty) return;
     final s = free.first;
+    final known = ref.read(supplyCostsProvider).value?[s.id] ?? 0;
     setState(
-      () =>
-          _lines.add(LineDraft(s, cost: (s.unitCost / 100).toStringAsFixed(2))),
+      () => _lines.add(LineDraft(s, cost: (known / 100).toStringAsFixed(2))),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(
+      supplyCostsProvider,
+    ); // mantiene vivo el costo vigente (solo Admin)
     final suppliers = widget.suppliers.where((s) => s.active).toList();
     final total = _lines.fold<int>(0, (sum, l) {
       final q = Qty.parse(l.qty.text);
@@ -612,12 +645,16 @@ class RecipeDialog extends ConsumerStatefulWidget {
     required this.dishName,
     required this.priceCents,
     required this.supplies,
+    required this.costs,
     this.recipe,
   });
   final String dishId;
   final String dishName;
   final int priceCents;
   final List<Supply> supplies;
+
+  /// Costos vigentes (`costosInsumos`); solo la administración abre este diálogo.
+  final Map<String, int> costs;
   final Recipe? recipe;
   @override
   ConsumerState<RecipeDialog> createState() => _RecipeDialogState();
@@ -652,7 +689,9 @@ class _RecipeDialogState extends ConsumerState<RecipeDialog> {
   Widget build(BuildContext context) {
     final cost = _lines.fold<int>(0, (sum, l) {
       final q = Qty.parse(l.qty.text);
-      return q == null ? sum : sum + Qty.cost(q, l.supply.unitCost);
+      return q == null
+          ? sum
+          : sum + Qty.cost(q, widget.costs[l.supply.id] ?? 0);
     });
     final margin = widget.priceCents - cost;
     return ActionDialog(

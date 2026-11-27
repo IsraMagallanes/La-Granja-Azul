@@ -16,7 +16,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async ctx => {
     const db=ctx.firestore();
-    for (const [uid,rol] of Object.entries({w1:'mesero',w2:'mesero',admin:'admin',super:'superadmin',k:'cocina',cash:'cajero',stock:'almacen',inactive:'mesero'})) {
+    for (const [uid,rol] of Object.entries({w1:'mesero',w2:'mesero',admin:'admin',super:'superadmin',k:'cocina',cash:'cajero',inactive:'mesero'})) {
       await setDoc(doc(db,'usuarios',uid),{rol,nombre:`Usuario ${uid}`,activo:uid!=='inactive'});
     }
     // Fase 2: el personal no exento necesita la jornada abierta para operar.
@@ -151,7 +151,7 @@ test('cocina y caja solo consultan; almacén, anónimo, inactivo y correo no ver
     await assertSucceeds(getDocs(collection(db(uid),'pedidos/a/detalles')));
     await assertFails(status(db(uid),'a','registrado'));
   }
-  for(const database of [anon(),db('stock'),db('inactive'),env.authenticatedContext('w1',{email_verified:false}).firestore()]) {
+  for(const database of [anon(),db('inactive'),env.authenticatedContext('w1',{email_verified:false}).firestore()]) {
     await assertFails(getDocs(collection(database,'pedidos')));
     await assertFails(getDocs(collection(database,'mesas')));
     await assertFails(setDoc(doc(database,'pedidos/b'),orderData('w1')));
@@ -271,7 +271,7 @@ test('no se saltan ni se revierten pasos de cocina',async()=>{
 });
 test('solo cocina y administración mueven la cocina; el mesero ni el suyo',async()=>{
   await registered();
-  for(const uid of ['w1','w2','cash','stock','inactive']) await assertFails(kitchen(db(uid),'a','preparando'));
+  for(const uid of ['w1','w2','cash','inactive']) await assertFails(kitchen(db(uid),'a','preparando'));
   await assertFails(kitchen(anon(),'a','preparando'));
   await assertFails(kitchen(env.authenticatedContext('k',{email_verified:false}).firestore(),'a','preparando'));
   await assertSucceeds(kitchen(db('admin'),'a','preparando',{cocinaPor:'admin'}));
@@ -323,5 +323,5 @@ test('el estado de cocina es legible para quien ve el pedido y no para ajenos',a
   await assertSucceeds(getDoc(doc(db('k'),'pedidos/a')));
   await assertSucceeds(getDoc(doc(db('w1'),'pedidos/a')));
   await assertFails(getDoc(doc(db('w2'),'pedidos/a')));
-  await assertFails(getDoc(doc(db('stock'),'pedidos/a')));
+  await assertFails(getDoc(doc(anon(),'pedidos/a')));
 });

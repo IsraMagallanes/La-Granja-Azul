@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/config/firestore_paths.dart';
 import '../../audit/models/audit_entry.dart';
 import '../../audit/repositories/firestore_audit.dart';
+import '../../roles/models/user_role.dart';
 import '../../users/models/app_user.dart';
 import '../models/staff_draft.dart';
 import '../models/staff_member.dart';
@@ -71,6 +72,14 @@ class FirestoreStaffRepository implements StaffRepository {
       'actualizadoEn': FieldValue.serverTimestamp(),
       'ultimaAuditoriaId': auditId,
     });
+    if (draft.role == UserRole.mesero) {
+      _writeWaiterDirectory(
+        batch,
+        uid,
+        '${draft.nombres.trim()} ${draft.apellidos.trim()}',
+        true,
+      );
+    }
     batch.set(_col(FirestorePaths.documentos).doc(draft.documentoNormalizado), {
       'uid': uid,
       'creadoEn': FieldValue.serverTimestamp(),
@@ -125,6 +134,12 @@ class FirestoreStaffRepository implements StaffRepository {
       AuditAction.editarTrabajador,
       changed,
       changes,
+      directory: current.role == UserRole.mesero || draft.role == UserRole.mesero
+          ? (
+              '${draft.nombres.trim()} ${draft.apellidos.trim()}',
+              draft.role == UserRole.mesero && current.estado.canAccess,
+            )
+          : null,
     );
   }
 
@@ -160,6 +175,14 @@ class FirestoreStaffRepository implements StaffRepository {
       'actualizadoEn': FieldValue.serverTimestamp(),
       'ultimaAuditoriaId': auditId,
     });
+    if (target.role == UserRole.mesero) {
+      _writeWaiterDirectory(
+        batch,
+        target.uid,
+        target.nombreCompleto,
+        change.newStatus.canAccess,
+      );
+    }
     await batch.commit();
   }
 
@@ -194,8 +217,9 @@ class FirestoreStaffRepository implements StaffRepository {
     AppUser actor,
     String action,
     List<String> changedFields,
-    Map<String, Object?> changes,
-  ) async {
+    Map<String, Object?> changes, {
+    (String, bool)? directory,
+  }) async {
     final batch = _firestore.batch();
     final auditId = addAuditEntry(
       _firestore,
@@ -210,6 +234,25 @@ class FirestoreStaffRepository implements StaffRepository {
       'actualizadoEn': FieldValue.serverTimestamp(),
       'ultimaAuditoriaId': auditId,
     });
+    if (directory != null) {
+      _writeWaiterDirectory(batch, uid, directory.$1, directory.$2);
+    }
     await batch.commit();
+  }
+
+  /// Directorio mínimo de meseros (UID, nombre y estado): permite elegir
+  /// destinatario de utensilios sin exponer datos personales. Las reglas exigen
+  /// que coincida con el perfil tal como queda en el lote.
+  void _writeWaiterDirectory(
+    WriteBatch batch,
+    String uid,
+    String name,
+    bool active,
+  ) {
+    batch.set(_col(FirestorePaths.directorioMeseros).doc(uid), {
+      'nombre': name,
+      'activo': active,
+      'actualizadoEn': FieldValue.serverTimestamp(),
+    });
   }
 }

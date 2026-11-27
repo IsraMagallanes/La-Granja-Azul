@@ -7,7 +7,8 @@ import 'package:granja_azul/features/auth/models/session_state.dart';
 import 'package:granja_azul/features/inventory/controllers/inventory_providers.dart';
 import 'package:granja_azul/features/inventory/models/inventory_models.dart';
 import 'package:granja_azul/features/inventory/repositories/inventory_repository.dart';
-import 'package:granja_azul/features/inventory/screens/inventory_screen.dart';
+import 'package:granja_azul/features/inventory/screens/purchasing_screen.dart';
+import 'package:granja_azul/features/inventory/screens/supplies_screen.dart';
 import 'package:granja_azul/features/inventory/services/inventory_service.dart';
 import 'package:granja_azul/features/menu/controllers/menu_providers.dart';
 import 'package:granja_azul/features/roles/models/permission.dart';
@@ -22,6 +23,8 @@ class FakeInventoryRepository implements InventoryRepository {
   final moves = <(String, MovementKind, int, String)>[];
   final purchases = BehaviorSubject<List<Purchase>>.seeded([]);
   final received = <String>[];
+  final costs = BehaviorSubject<Map<String, int>>.seeded({});
+  final costCalls = <(String, int)>[];
   Supply? created;
   List<PurchaseLine>? purchaseLines;
   Map<String, int>? saved;
@@ -37,26 +40,28 @@ class FakeInventoryRepository implements InventoryRepository {
   @override
   Stream<List<Recipe>> watchRecipes() => Stream.value(const []);
   @override
-  Future<void> createSupply(
-    String name,
-    SupplyUnit unit,
-    int minStock,
-    int unitCost,
-  ) async => created = Supply(
-    id: 'n',
-    name: name,
-    unit: unit,
-    stock: 0,
-    minStock: minStock,
-    unitCost: unitCost,
-    active: true,
-  );
+  Stream<Map<String, int>> watchSupplyCosts() => costs.stream;
+  @override
+  Future<void> setSupplyCost(
+    String id,
+    int unitCost, {
+    required String actorUid,
+  }) async => costCalls.add((id, unitCost));
+  @override
+  Future<void> createSupply(String name, SupplyUnit unit, int minStock) async =>
+      created = Supply(
+        id: 'n',
+        name: name,
+        unit: unit,
+        stock: 0,
+        minStock: minStock,
+        active: true,
+      );
   @override
   Future<void> editSupply(
     String id, {
     required String name,
     required int minStock,
-    required int unitCost,
     required bool active,
   }) async {}
   @override
@@ -103,7 +108,6 @@ Supply supply({
   String id = 'i1',
   int stock = 10000,
   int min = 2000,
-  int cost = 1200,
   bool active = true,
   SupplyUnit unit = SupplyUnit.kg,
 }) => Supply(
@@ -112,7 +116,6 @@ Supply supply({
   unit: unit,
   stock: stock,
   minStock: min,
-  unitCost: cost,
   active: active,
 );
 
@@ -188,16 +191,17 @@ void main() {
     });
 
     test('costo de una receta con el costo vigente y margen', () {
-      final pollo = supply(cost: 1200);
-      final papa = supply(id: 'i2', cost: 300);
+      final pollo = supply();
+      final papa = supply(id: 'i2');
       final recipe = Recipe('d1', const [
         RecipeIngredient(supplyId: 'i1', name: 'Pollo', qty: 500),
         RecipeIngredient(supplyId: 'i2', name: 'Papa', qty: 300),
       ]);
       final map = {'i1': pollo, 'i2': papa};
-      expect(recipe.cost(map), 600 + 90);
+      const costs = {'i1': 1200, 'i2': 300};
+      expect(recipe.cost(costs), 600 + 90);
       expect(recipe.hasMissing(map), isFalse);
-      expect(recipe.cost({'i1': pollo}), 600); // insumo faltante = 0
+      expect(recipe.cost(const {'i1': 1200}), 600); // sin costo = 0
       expect(recipe.hasMissing({'i1': pollo}), isTrue);
       expect(Recipe.margin(2550, 690), 1860);
     });
@@ -290,24 +294,46 @@ void main() {
 
     test('valida el alta de un insumo', () async {
       await expectLater(
-        service.createSupply('a', SupplyUnit.kg, 0, 0),
+        service.createSupply('a', SupplyUnit.kg, 0),
         throwsA(isA<AppFailure>()),
       );
       await expectLater(
-        service.createSupply('Aceite', SupplyUnit.l, -1, 0),
+        service.createSupply('Aceite', SupplyUnit.l, -1),
+        throwsA(isA<AppFailure>()),
+      );
+      await service.createSupply('  Aceite ', SupplyUnit.l, 1000);
+      expect(repo.created!.name, 'Aceite');
+    });
+
+    test('el costo de un insumo se valida y se guarda aparte', () async {
+      await expectLater(
+        service.setSupplyCost(supply(), -1, actorUid: 'a'),
         throwsA(isA<AppFailure>()),
       );
       await expectLater(
-        service.createSupply(
-          'Aceite',
-          SupplyUnit.l,
-          0,
+        service.setSupplyCost(
+          supply(),
           InventoryValidation.maxCost + 1,
+          actorUid: 'a',
         ),
         throwsA(isA<AppFailure>()),
       );
-      await service.createSupply('  Aceite ', SupplyUnit.l, 1000, 800);
-      expect(repo.created!.name, 'Aceite');
+      await service.setSupplyCost(supply(), 1250, actorUid: 'a');
+      await service.setSupplyCost(supply(), 0, actorUid: 'a'); // 0 = sin costo
+      expect(repo.costCalls, [('i1', 1250), ('i1', 0)]);
+    });
+
+    test('el insumo ya no lleva costo y la receta lo recibe aparte', () {
+      final doc = {
+        'nombre': 'Pollo',
+        'unidad': 'kg',
+        'stock': 1,
+        'stockMinimo': 0,
+        'activo': true,
+        'costoUnitario': 999, // dato antiguo sin migrar: se ignora
+      };
+      final s = Supply.fromMap('i1', doc);
+      expect(s.name, 'Pollo');
     });
   });
 
@@ -360,13 +386,13 @@ void main() {
         throwsA(isA<AppFailure>()),
       );
       await expectLater(
-        attempt(supplier, [for (var i = 0; i < 9; i++) line('i$i')]),
+        attempt(supplier, [for (var i = 0; i < 6; i++) line('i$i')]),
         throwsA(isA<AppFailure>()),
       );
       expect(repo.purchaseLines, isNull);
-      expect(InventoryValidation.maxLines, 8);
-      await attempt(supplier, [for (var i = 0; i < 8; i++) line('i$i')]);
-      expect(repo.purchaseLines, hasLength(8));
+      expect(InventoryValidation.maxLines, 5);
+      await attempt(supplier, [for (var i = 0; i < 5; i++) line('i$i')]);
+      expect(repo.purchaseLines, hasLength(5));
       await attempt(supplier, [line('i1'), line('i2')]);
       expect(repo.purchaseLines, hasLength(2));
       expect(line('i1').subtotal, 5000); // 4 kg a S/ 12.50
@@ -472,36 +498,42 @@ void main() {
   });
 
   group('permisos', () {
-    test(
-      'Almacén, Admin y Superadmin gestionan el inventario; el resto no',
-      () {
-        const permissions = PermissionService();
-        for (final role in UserRole.values) {
-          final allowed = [
-            UserRole.almacen,
-            UserRole.admin,
-            UserRole.superadmin,
-          ].contains(role);
-          for (final a in [
-            PermissionAction.read,
-            PermissionAction.create,
-            PermissionAction.update,
-          ]) {
-            expect(
-              permissions.canDo(role, AppModule.inventory, a),
-              allowed,
-              reason: '${role.name}.${a.name}',
-            );
-          }
+    test('Cocina, Admin y Superadmin gestionan los insumos; los costos y las compras, solo la administración', () {
+      const permissions = PermissionService();
+      const crud = [
+        PermissionAction.read,
+        PermissionAction.create,
+        PermissionAction.update,
+      ];
+      for (final role in UserRole.values) {
+        final admin = role == UserRole.admin || role == UserRole.superadmin;
+        for (final a in crud) {
+          expect(
+            permissions.canDo(role, AppModule.supplies, a),
+            admin || role == UserRole.cocina,
+            reason: 'supplies ${role.name}.${a.name}',
+          );
+          expect(
+            permissions.canDo(role, AppModule.purchasing, a),
+            admin,
+            reason: 'purchasing ${role.name}.${a.name}',
+          );
         }
-      },
-    );
+        expect(
+          permissions.canDo(role, AppModule.supplies, PermissionAction.special),
+          admin,
+          reason: 'costos de insumos ${role.name}',
+        );
+      }
+    });
   });
 
   group('pantalla', () {
     Future<void> pump(
       WidgetTester tester, {
       Size size = const Size(1100, 900),
+      UserRole role = UserRole.cocina,
+      Widget screen = const SuppliesScreen(),
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -516,9 +548,8 @@ void main() {
               (ref) => Stream.value(const MenuCatalog([], [])),
             ),
             sessionProvider.overrideWith(
-              (ref) => Stream.value(
-                Authenticated(buildUser(uid: 'st', role: UserRole.almacen)),
-              ),
+              (ref) =>
+                  Stream.value(Authenticated(buildUser(uid: 'st', role: role))),
             ),
           ],
           child: MaterialApp(
@@ -528,7 +559,7 @@ void main() {
                   ref.watch(
                     sessionProvider,
                   ); // como el panel real, mantiene viva la sesión
-                  return const InventoryScreen();
+                  return screen;
                 },
               ),
             ),
@@ -594,12 +625,36 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('Cocina ve insumos sin costos ni botón de costo', (
+      tester,
+    ) async {
+      repo.costs.add({'i1': 1200});
+      await pump(tester);
+      expect(find.textContaining('S/'), findsNothing);
+      expect(find.text('Costo'), findsNothing);
+      expect(find.textContaining('Costo no registrado'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('Admin ve el costo de cada insumo y puede fijarlo', (
+      tester,
+    ) async {
+      repo.costs.add({'i1': 1200});
+      await pump(tester, role: UserRole.admin);
+      expect(find.textContaining('S/ 12.00 por kg'), findsOneWidget);
+      expect(find.text('Costo no registrado'), findsOneWidget); // i2
+      expect(find.text('Costo'), findsNWidgets(2));
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('la pestaña Compras permite recibir una compra pendiente', (
       tester,
     ) async {
-      await pump(tester);
-      await tester.tap(find.text('Compras'));
-      await tester.pumpAndSettle();
+      await pump(
+        tester,
+        role: UserRole.admin,
+        screen: const PurchasingScreen(),
+      );
       expect(find.text('Pendiente'), findsOneWidget);
       await tester.tap(find.text('Recibir compra'));
       await tester.pumpAndSettle();
@@ -611,18 +666,29 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('en celular las cinco pestañas se recorren sin desbordes', (
+    testWidgets('en celular las pestañas se recorren sin desbordes', (
       tester,
     ) async {
-      await pump(tester, size: const Size(390, 800));
-      for (final t in [
-        'Movimientos',
-        'Recetas',
-        'Proveedores',
-        'Compras',
-        'Insumos',
-      ]) {
-        await tester.tap(find.text(t));
+      await pump(tester, size: const Size(390, 800), role: UserRole.admin);
+      for (final t in ['Movimientos', 'Recetas', 'Insumos']) {
+        await tester.tap(find.widgetWithText(Tab, t));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: t);
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('en celular, compras y proveedores sin desbordes', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        size: const Size(390, 800),
+        role: UserRole.admin,
+        screen: const PurchasingScreen(),
+      );
+      for (final t in ['Proveedores', 'Compras']) {
+        await tester.tap(find.widgetWithText(Tab, t));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: t);
       }

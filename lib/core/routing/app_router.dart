@@ -14,7 +14,9 @@ import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/verify_email_screen.dart';
 import '../../features/cashier/screens/cashier_screen.dart';
-import '../../features/inventory/screens/inventory_screen.dart';
+import '../../features/inventory/screens/purchasing_screen.dart';
+import '../../features/inventory/screens/supplies_screen.dart';
+import '../../features/utensils/screens/utensils_screen.dart';
 import '../../features/kitchen/screens/kitchen_screen.dart';
 import '../../features/menu/screens/menu_admin_screen.dart';
 import '../../features/menu/screens/public_menu_screen.dart';
@@ -37,7 +39,9 @@ const _staffScreens = <AppRoute, Widget>{
   AppRoute.waiter: WaiterScreen(),
   AppRoute.kitchen: KitchenScreen(),
   AppRoute.cashier: CashierScreen(),
-  AppRoute.inventory: InventoryScreen(),
+  AppRoute.supplies: SuppliesScreen(),
+  AppRoute.purchasing: PurchasingScreen(),
+  AppRoute.utensils: UtensilsScreen(),
   AppRoute.users: UsersScreen(),
   AppRoute.roles: RolesScreen(),
   AppRoute.tables: TablesScreen(),

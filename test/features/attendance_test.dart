@@ -643,7 +643,6 @@ void main() {
       expect(n.homeFor(UserRole.mesero), AppRoute.waiter);
       expect(n.homeFor(UserRole.cocina), AppRoute.kitchen);
       expect(n.homeFor(UserRole.cajero), AppRoute.cashier);
-      expect(n.homeFor(UserRole.almacen), AppRoute.inventory);
     });
   });
 

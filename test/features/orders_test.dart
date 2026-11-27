@@ -77,7 +77,7 @@ void main() {
     for (final role in [UserRole.admin, UserRole.superadmin]) {
       expect(OrderPolicy.canEdit(buildUser(role: role), order), true);
     }
-    for (final role in [UserRole.cocina, UserRole.cajero, UserRole.almacen]) {
+    for (final role in [UserRole.cocina, UserRole.cajero]) {
       expect(OrderPolicy.canOpen(buildUser(role: role)), false);
     }
     expect(

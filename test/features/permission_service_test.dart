@@ -29,7 +29,7 @@ void main() {
   });
 
   test('los permisos de pantalla de cada rol no cambiaron con la matriz por acción', () {
-    const adminPermissions = {
+    final adminPermissions = {
       Permission.viewDashboard,
       Permission.manageStaff,
       Permission.manageMenu,
@@ -41,7 +41,11 @@ void main() {
       Permission.manageReservations,
       Permission.useKitchen,
       Permission.useCashier,
-      Permission.manageInventory,
+      Permission.manageSupplies,
+      Permission.viewSupplyCosts,
+      Permission.managePurchasing,
+      Permission.manageUtensils,
+      Permission.viewUtensilCosts,
       Permission.viewReports,
       Permission.manageAttendance,
       Permission.ownAttendance,
@@ -61,10 +65,12 @@ void main() {
       Permission.viewOrders,
       Permission.viewReservations,
       Permission.manageReservations,
+      Permission.manageUtensils,
       Permission.ownAttendance,
     });
     expect(service.permissionsOf(UserRole.cocina), {
       Permission.useKitchen,
+      Permission.manageSupplies,
       Permission.viewOrders,
       Permission.ownAttendance,
     });
@@ -73,10 +79,6 @@ void main() {
       Permission.viewOrders,
       Permission.viewTables,
       Permission.viewReservations,
-      Permission.ownAttendance,
-    });
-    expect(service.permissionsOf(UserRole.almacen), {
-      Permission.manageInventory,
       Permission.ownAttendance,
     });
   });
@@ -142,8 +144,8 @@ void main() {
       );
     });
 
-    test('cocina, caja y almacén no editan la carta ni el personal', () {
-      for (final role in [UserRole.cocina, UserRole.cajero, UserRole.almacen]) {
+    test('cocina y caja no editan la carta ni el personal', () {
+      for (final role in [UserRole.cocina, UserRole.cajero]) {
         expect(service.actionsOf(role, AppModule.menu), isEmpty);
         expect(service.actionsOf(role, AppModule.staff), isEmpty);
       }

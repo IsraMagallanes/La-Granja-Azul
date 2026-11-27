@@ -31,7 +31,9 @@ class PermissionService {
     AppModule.reservations: {_r, _c, _u},
     AppModule.kitchen: {_r, _u},
     AppModule.cashier: {_r, _c, _u},
-    AppModule.inventory: {_r, _c, _u},
+    AppModule.supplies: {_r, _c, _u, _s},
+    AppModule.purchasing: {_r, _c, _u},
+    AppModule.utensils: {_r, _c, _u, _s},
     AppModule.reports: {_r},
     AppModule.attendance: {_r, _u},
     AppModule.selfAttendance: {_r, _c},
@@ -51,12 +53,16 @@ class PermissionService {
     UserRole.admin: _adminGrants,
     UserRole.mesero: {
       AppModule.tables: {_r},
+      // Ver existencias y registrar movimientos; nunca costos (_s).
+      AppModule.utensils: {_r, _c},
       AppModule.orders: {_r, _c, _u},
       AppModule.reservations: {_r, _c, _u},
       AppModule.selfAttendance: {_r, _c},
     },
     UserRole.cocina: {
       AppModule.kitchen: {_r, _u},
+      // Sin costos: su acción especial (_s) es solo de la administración.
+      AppModule.supplies: {_r, _c, _u},
       AppModule.orders: {_r},
       AppModule.selfAttendance: {_r, _c},
     },
@@ -65,10 +71,6 @@ class PermissionService {
       AppModule.orders: {_r},
       AppModule.tables: {_r},
       AppModule.reservations: {_r},
-      AppModule.selfAttendance: {_r, _c},
-    },
-    UserRole.almacen: {
-      AppModule.inventory: {_r, _c, _u},
       AppModule.selfAttendance: {_r, _c},
     },
   };

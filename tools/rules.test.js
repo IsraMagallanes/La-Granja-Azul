@@ -32,7 +32,7 @@ beforeEach(async () => {
     const base = { email: 'x@granja.pe', nombre: 'X' };
     await setDoc(doc(db, 'usuarios/super'), { ...base, rol: 'superadmin', activo: true });
     await setDoc(doc(db, 'usuarios/admin'), { ...base, rol: 'admin', activo: true });
-    for (const rol of ['mesero', 'cocina', 'cajero', 'almacen']) {
+    for (const rol of ['mesero', 'cocina', 'cajero']) {
       await setDoc(doc(db, `usuarios/${rol}`), { ...base, rol, activo: true });
     }
     await setDoc(doc(db, 'usuarios/inactivo'), { ...base, rol: 'admin', activo: false });
@@ -142,13 +142,13 @@ test('desactivar conserva referencias y permite reactivar sin huérfanos', async
 
 // Ambas pantallas usan listeners de colección completa, no lecturas de un solo documento.
 test('consultas de carta y categorías permitidas sin sesión y con cualquier rol', async () => {
-  for (const db of [anon(), ...['admin', 'super', 'mesero', 'cocina', 'cajero', 'almacen', 'inactivo'].map(as)]) {
+  for (const db of [anon(), ...['admin', 'super', 'mesero', 'cocina', 'cajero', 'inactivo'].map(as)]) {
     await assertSucceeds(getDocs(collection(db, 'carta')));
     await assertSucceeds(getDocs(collection(db, 'categorias')));
   }
 });
 test('los roles operativos no pueden gestionar ninguna colección de la carta', async () => {
-  for (const uid of ['mesero', 'cocina', 'cajero', 'almacen', 'inactivo']) {
+  for (const uid of ['mesero', 'cocina', 'cajero', 'inactivo']) {
     const db = as(uid);
     await assertFails(setDoc(doc(db, 'carta/x'), dish));
     await assertFails(updateDoc(doc(db, 'carta/plato1'), { disponible: false }));
@@ -198,7 +198,7 @@ test('fotos: lectura pública; solo admin y superadmin activos escriben', async 
   await assertSucceeds(setDoc(doc(as('admin'), 'cartaFotos/plato1'), photo()));
   await assertSucceeds(setDoc(doc(as('super'), 'cartaFotos/plato1'), photo(6000)));
   await assertSucceeds(getDoc(doc(anon(), 'cartaFotos/plato1')));
-  for (const who of ['mesero', 'cocina', 'cajero', 'almacen', 'inactivo']) {
+  for (const who of ['mesero', 'cocina', 'cajero', 'inactivo']) {
     await assertFails(setDoc(doc(as(who), 'cartaFotos/plato1'), photo()));
     await assertFails(deleteDoc(doc(as(who), 'cartaFotos/plato1')));
   }

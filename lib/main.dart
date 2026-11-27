@@ -11,6 +11,8 @@ import 'features/cashier/controllers/cash_providers.dart';
 import 'features/cashier/repositories/firestore_cash_repository.dart';
 import 'features/inventory/controllers/inventory_providers.dart';
 import 'features/inventory/repositories/firestore_inventory_repository.dart';
+import 'features/utensils/controllers/utensil_providers.dart';
+import 'features/utensils/repositories/firestore_utensil_repository.dart';
 import 'features/orders/controllers/order_providers.dart';
 import 'features/reports/controllers/report_providers.dart';
 import 'features/reports/repositories/firestore_reports_repository.dart';
@@ -53,6 +55,9 @@ Future<void> main() async {
         ),
         inventoryRepositoryProvider.overrideWithValue(
           FirestoreInventoryRepository(firestore),
+        ),
+        utensilRepositoryProvider.overrideWithValue(
+          FirestoreUtensilRepository(firestore),
         ),
         reportsRepositoryProvider.overrideWithValue(
           FirestoreReportsRepository(firestore),

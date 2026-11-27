@@ -52,7 +52,8 @@ pendientes: tabla «Registro de fases» del `README.md`.
 
 ### Roles y permisos
 
-`superadmin`, `admin`, `mesero`, `cocina`, `cajero`, `almacen`. La matriz vive
+`superadmin`, `admin`, `mesero`, `cocina`, `cajero` (el rol Almacén se retiró el
+2026-11-27; sus datos históricos se conservan). La matriz vive
 en `PermissionService` y se replica en `firestore.rules`. Superadmin y Admin
 comparten el dashboard; solo Superadmin tiene `manageAdmins` y `manageRoles`.
 
@@ -314,7 +315,7 @@ de MIUI/HyperOS, y fecha/hora del dispositivo.
   por rol y estado, paginación de 20. En la lista el documento y el celular van
   enmascarados; la ficha completa solo la ven admin/superadmin.
 - Jerarquía (UI, `StaffPolicy` y reglas): Superadmin asigna admin + roles
-  operativos; Admin solo mesero/cocina/cajero/almacén; nadie crea superadmins
+  operativos; Admin solo mesero/cocina/cajero; nadie crea superadmins
   desde la app; nadie se administra a sí mismo; un Admin nunca toca a otro Admin.
 - Bajas: modal obligatorio (Renuncia / Despido / Suspensión / Otro, motivo
   escrito ≥ 10 caracteres y casilla de confirmación). Baja lógica: `activo=false`

@@ -44,7 +44,7 @@ service cloud.firestore {
     }
 
     function operationalRoles() {
-      return ['mesero', 'cocina', 'cajero', 'almacen'];
+      return ['mesero', 'cocina', 'cajero'];
     }
 
     // Asistencia como condición de acceso operativo (mesas, pedidos y lo que
@@ -61,7 +61,7 @@ service cloud.firestore {
     // Roles que el actor puede asignar o administrar. Nadie crea superadmins.
     function assignableRoles() {
       return isSuper()
-        ? ['admin', 'mesero', 'cocina', 'cajero', 'almacen']
+        ? ['admin', 'mesero', 'cocina', 'cajero']
         : operationalRoles();
     }
 
@@ -983,46 +983,59 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------- Fase 7
-    // Inventario, recetas, proveedores y compras. Almacén, Admin y Superadmin
-    // (con jornada abierta salvo los exentos). Cantidades en milésimas de la
-    // unidad (1.5 kg = 1500) y costos en centavos, siempre enteros. El stock solo
-    // cambia junto a un movimiento de solo agregar que lo explica; no hay
-    // borrado: se conserva el histórico.
-    function canStock() { return roleIs(['almacen', 'admin', 'superadmin']) && onShift(); }
+    // Insumos (Cocina, Admin y Superadmin, con jornada abierta salvo los exentos),
+    // recetas, proveedores y compras (solo Admin y Superadmin). Cantidades en
+    // milésimas de la unidad (1.5 kg = 1500) y costos en centavos, siempre
+    // enteros. El stock solo cambia junto a un movimiento de solo agregar que lo
+    // explica; no hay borrado: se conserva el histórico. Los costos viven aparte
+    // (costosInsumos, solo Admin): Cocina nunca los lee.
+    function canStock() { return roleIs(['cocina', 'admin', 'superadmin']) && onShift(); }
+    function canPurchase() { return isAdmin(); }
     function stockInt(v) { return v is int && v >= 0 && v <= 1000000000; }
     function inventoryName(v, minimum, maximum) {
       return v is string && v.trim().size() >= minimum && v.size() <= maximum;
     }
 
     function validSupplyNew(d) {
-      return d.keys().hasOnly(['nombre', 'unidad', 'stock', 'stockMinimo', 'costoUnitario', 'activo', 'creadoEn', 'actualizadoEn'])
-        && d.keys().hasAll(['nombre', 'unidad', 'stock', 'stockMinimo', 'costoUnitario', 'activo', 'creadoEn', 'actualizadoEn'])
+      // Sin costoUnitario: el costo vive en costosInsumos (solo Admin).
+      return d.keys().hasOnly(['nombre', 'unidad', 'stock', 'stockMinimo', 'activo', 'creadoEn', 'actualizadoEn'])
+        && d.keys().hasAll(['nombre', 'unidad', 'stock', 'stockMinimo', 'activo', 'creadoEn', 'actualizadoEn'])
         && inventoryName(d.nombre, 2, 60)
         && d.unidad in ['kg', 'g', 'l', 'ml', 'und']
-        && d.stock == 0 && stockInt(d.stockMinimo) && stockInt(d.costoUnitario)
+        && d.stock == 0 && stockInt(d.stockMinimo)
         && d.activo is bool && d.creadoEn == request.time && d.actualizadoEn == request.time;
     }
-    // Catálogo: el costo solo lo cambia la administración (el de compras llega por
-    // una compra recibida). Nombre, mínimo y activo también los edita Almacén.
+    // Catálogo: nombre, mínimo y activo. El campo costoUnitario ya no se puede
+    // escribir en un insumo (los documentos antiguos lo conservan hasta la
+    // migración, pero ninguna edición lo toca ni lo reintroduce).
     function supplyEdit(before, after) {
-      return after.diff(before).affectedKeys().hasOnly(['nombre', 'stockMinimo', 'costoUnitario', 'activo', 'actualizadoEn'])
-        && inventoryName(after.nombre, 2, 60) && stockInt(after.stockMinimo) && stockInt(after.costoUnitario)
-        && (after.costoUnitario == before.costoUnitario || isAdmin())
+      return after.diff(before).affectedKeys().hasOnly(['nombre', 'stockMinimo', 'activo', 'actualizadoEn'])
+        && inventoryName(after.nombre, 2, 60) && stockInt(after.stockMinimo)
         && after.activo is bool && after.actualizadoEn == request.time;
     }
     // El stock solo cambia con un movimiento NUEVO (creado en este mismo lote:
     // su creadoEn es la hora de la petición), del mismo insumo y cuyo delta
-    // explica exactamente el cambio. El costo solo cambia con un movimiento de
-    // compra y toma el costo de su línea.
+    // explica exactamente el cambio.
     function supplyStock(id, before, after) {
       let m = getAfter(docPath('movimientosInventario', after.ultimoMovimiento)).data;
-      return after.diff(before).affectedKeys().hasOnly(['stock', 'costoUnitario', 'ultimoMovimiento', 'actualizadoEn'])
+      return after.diff(before).affectedKeys().hasOnly(['stock', 'ultimoMovimiento', 'actualizadoEn'])
         && before.activo == true
         && after.ultimoMovimiento is string && after.actualizadoEn == request.time
         && m.creadoEn == request.time && m.insumoId == id
-        && stockInt(after.stock) && after.stock == before.stock + m.delta && m.stockResultante == after.stock
-        && stockInt(after.costoUnitario)
-        && (m.tipo == 'compra' ? after.costoUnitario == m.costoUnitario : after.costoUnitario == before.costoUnitario);
+        && stockInt(after.stock) && after.stock == before.stock + m.delta && m.stockResultante == after.stock;
+    }
+    // Costo vigente de cada insumo, aparte para que Cocina no lo lea. Solo Admin y
+    // Superadmin. Un insumo sin documento = costo no registrado. Esta regla no
+    // consulta el insumo (cada acceso cuenta en el límite de la recepción).
+    match /costosInsumos/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['costoUnitario', 'actualizadoEn', 'actualizadoPor'])
+        && request.resource.data.keys().hasAll(['costoUnitario', 'actualizadoEn', 'actualizadoPor'])
+        && stockInt(request.resource.data.costoUnitario) && request.resource.data.costoUnitario <= 10000000
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.actualizadoPor == request.auth.uid;
+      allow delete: if false;
     }
     // Fase 8B: al pasar un pedido a «Listo», Cocina (o la administración) descuenta
     // los insumos de la receta en el mismo lote. Solo puede tocar el stock con un
@@ -1047,7 +1060,7 @@ service cloud.firestore {
     function validStockMovement(id, d) {
       let supply = getAfter(docPath('insumos', d.insumoId)).data;
       return d.keys().hasOnly(['insumoId', 'insumoNombre', 'tipo', 'delta', 'stockResultante', 'motivo', 'compraId',
-          'linea', 'costoUnitario', 'creadoPor', 'creadoPorNombre', 'creadoEn'])
+          'linea', 'creadoPor', 'creadoPorNombre', 'creadoEn'])
         && d.keys().hasAll(['insumoId', 'insumoNombre', 'tipo', 'delta', 'stockResultante', 'motivo',
           'creadoPor', 'creadoPorNombre', 'creadoEn'])
         && d.insumoId is string && d.insumoNombre == supply.nombre
@@ -1061,9 +1074,13 @@ service cloud.firestore {
         && d.creadoPorNombre == get(profilePath()).data.nombre
         && d.creadoEn == request.time
         && (d.tipo != 'compra'
-          ? (d.motivo.trim().size() >= 3 && !('compraId' in d) && !('linea' in d) && !('costoUnitario' in d))
-          : purchaseMovement(id, d));
+          ? (d.motivo.trim().size() >= 3 && !('compraId' in d) && !('linea' in d))
+          : (canPurchase() && purchaseMovement(id, d)));
     }
+    // Movimiento de compra (solo Admin/Superadmin). Opción B: valida el costo de la
+    // línea contra costosInsumos tal como queda al final del lote (un getAfter por
+    // línea) sin que el movimiento lo copie. Con el máximo de 5 líneas por compra
+    // el lote se mantiene en ≤ 18 accesos (límite de 20).
     function purchaseMovement(id, d) {
       let before = get(docPath('compras', d.compraId)).data;
       return d.motivo == '' && d.compraId is string && d.linea is int && d.linea >= 0 && d.linea < before.lineas.size()
@@ -1072,8 +1089,11 @@ service cloud.firestore {
         && getAfter(docPath('compras', d.compraId)).data.estado == 'recibida'
         && d.insumoId == before.lineas[d.linea].insumoId
         && d.delta == before.lineas[d.linea].cantidad
-        && d.costoUnitario == before.lineas[d.linea].costoUnitario;
+        && getAfter(docPath('costosInsumos', d.insumoId)).data.costoUnitario == before.lineas[d.linea].costoUnitario;
     }
+    // Cadena: el movimiento k exige que exista el k-1 (en este lote o antes), así que
+    // comprobar solo el último prueba que existen todos y el paso a «Listo» consulta
+    // 1 movimiento en vez de n (límite de 10 accesos por operación).
     // Movimiento «consumo»: id {pedido}_{n}, negativo, de un insumo que lo apunta,
     // y solo dentro del descuento de un pedido (el documento de descuento y el paso
     // a «Listo» van en el mismo lote). Las cantidades las calcula el cliente: las
@@ -1090,6 +1110,7 @@ service cloud.firestore {
         && d.pedidoId is string && d.linea is int && d.linea >= 0 && d.linea < 8
         && id == d.pedidoId + '_' + string(d.linea)
         && getAfter(docPath('descuentosInventario', d.pedidoId)).data.insumos > d.linea
+        && (d.linea == 0 || existsAfter(docPath('movimientosInventario', d.pedidoId + '_' + string(d.linea - 1))))
         && d.creadoPor == request.auth.uid
         && d.creadoPorNombre == get(profilePath()).data.nombre
         && d.creadoEn == request.time;
@@ -1102,18 +1123,14 @@ service cloud.firestore {
     }
 
     // Documento de descuento: uno por pedido (su id), de solo creación. Se crea
-    // únicamente junto al paso de «preparando» a «Listo» de ese pedido.
+    // únicamente junto al paso de «preparando» a «Listo» de ese pedido: la regla del
+    // pedido solo permite ese paso desde «preparando» y fija listoEn = request.time,
+    // así que `listoEn == request.time` prueba que la transición ocurre en este lote
+    // (sin leer el pedido anterior: un acceso menos).
     function consumptionDone(order) {
       let n = getAfter(docPath('descuentosInventario', order)).data.insumos;
-      return n >= 0
-        && (n <= 0 || getAfter(docPath('movimientosInventario', order + '_0')).data.pedidoId == order)
-        && (n <= 1 || getAfter(docPath('movimientosInventario', order + '_1')).data.pedidoId == order)
-        && (n <= 2 || getAfter(docPath('movimientosInventario', order + '_2')).data.pedidoId == order)
-        && (n <= 3 || getAfter(docPath('movimientosInventario', order + '_3')).data.pedidoId == order)
-        && (n <= 4 || getAfter(docPath('movimientosInventario', order + '_4')).data.pedidoId == order)
-        && (n <= 5 || getAfter(docPath('movimientosInventario', order + '_5')).data.pedidoId == order)
-        && (n <= 6 || getAfter(docPath('movimientosInventario', order + '_6')).data.pedidoId == order)
-        && (n <= 7 || getAfter(docPath('movimientosInventario', order + '_7')).data.pedidoId == order);
+      return n >= 0 && n <= 8
+        && (n == 0 || getAfter(docPath('movimientosInventario', order + '_' + string(n - 1))).data.pedidoId == order);
     }
     // Excepción de Admin/Superadmin: pasar a «Listo» aunque falte stock. Se descuenta
     // solo lo disponible (nunca stock negativo) y esta auditoría independiente guarda
@@ -1146,8 +1163,8 @@ service cloud.firestore {
         && request.resource.data.creadoPorNombre == get(profilePath()).data.nombre
         && request.resource.data.creadoEn == request.time
         && getAfter(docPath('descuentosInventario', order)).data.get('forzado', false) == true
-        && get(docPath('pedidos', order)).data.get('estadoCocina', 'pendiente') == 'preparando'
-        && getAfter(docPath('pedidos', order)).data.estadoCocina == 'listo';
+        && getAfter(docPath('pedidos', order)).data.estadoCocina == 'listo'
+        && getAfter(docPath('pedidos', order)).data.listoEn == request.time;
       allow update, delete: if false;
     }
     match /descuentosInventario/{order} {
@@ -1165,8 +1182,8 @@ service cloud.firestore {
         && request.resource.data.creadoPor == request.auth.uid
         && request.resource.data.creadoPorNombre == get(profilePath()).data.nombre
         && request.resource.data.creadoEn == request.time
-        && get(docPath('pedidos', order)).data.get('estadoCocina', 'pendiente') == 'preparando'
-        && getAfter(docPath('pedidos', order)).data.estadoCocina == 'listo';
+        && getAfter(docPath('pedidos', order)).data.estadoCocina == 'listo'
+        && getAfter(docPath('pedidos', order)).data.listoEn == request.time;
       allow update, delete: if false;
     }
 
@@ -1180,9 +1197,9 @@ service cloud.firestore {
         && d.activo is bool && d.actualizadoEn == request.time;
     }
     match /proveedores/{id} {
-      allow read: if canStock();
-      allow create: if canStock() && validSupplier(request.resource.data) && request.resource.data.creadoEn == request.time;
-      allow update: if canStock() && validSupplier(request.resource.data)
+      allow read: if canPurchase();
+      allow create: if canPurchase() && validSupplier(request.resource.data) && request.resource.data.creadoEn == request.time;
+      allow update: if canPurchase() && validSupplier(request.resource.data)
         && request.resource.data.creadoEn == resource.data.creadoEn;
       allow delete: if false;
     }
@@ -1193,43 +1210,34 @@ service cloud.firestore {
       return l.cantidad is int && l.cantidad >= 1 && l.costoUnitario is int
         && l.costoUnitario >= 0 && l.subtotal is int && math.abs(l.cantidad * l.costoUnitario - l.subtotal * 1000) <= 500;
     }
-    // Compra: hasta 8 líneas (límite provisional; ver README), ordenadas por
+    // Compra: hasta 5 líneas (por los accesos de la recepción), ordenadas por
     // insumo (sin repetidos), cada una con insumo activo, cantidad, costo y
     // subtotal coherentes. No se guarda un total: se deriva de los subtotales.
     function validPurchase(d) {
       let ls = d.lineas; let n = ls.size();
-      return d.proveedorId is string && ls is list && n >= 1 && n <= 8
+      return d.proveedorId is string && ls is list && n >= 1 && n <= 5
         && (n <= 0 || purchaseLine(ls[0]))
         && (n <= 1 || purchaseLine(ls[1]))
         && (n <= 2 || purchaseLine(ls[2]))
         && (n <= 3 || purchaseLine(ls[3]))
         && (n <= 4 || purchaseLine(ls[4]))
-        && (n <= 5 || purchaseLine(ls[5]))
-        && (n <= 6 || purchaseLine(ls[6]))
-        && (n <= 7 || purchaseLine(ls[7]))
         && (n <= 1 || ls[0].insumoId < ls[1].insumoId)
         && (n <= 2 || ls[1].insumoId < ls[2].insumoId)
         && (n <= 3 || ls[2].insumoId < ls[3].insumoId)
-        && (n <= 4 || ls[3].insumoId < ls[4].insumoId)
-        && (n <= 5 || ls[4].insumoId < ls[5].insumoId)
-        && (n <= 6 || ls[5].insumoId < ls[6].insumoId)
-        && (n <= 7 || ls[6].insumoId < ls[7].insumoId);
+        && (n <= 4 || ls[3].insumoId < ls[4].insumoId);
     }
     // Recibir exige que cada línea tenga su movimiento (id compra_n) en el lote.
     function purchaseFullyMoved(id, n) {
-      return n >= 1
+      return n >= 1 && n <= 5
         && (n <= 0 || getAfter(docPath('movimientosInventario', id + '_0')).data.compraId == id)
         && (n <= 1 || getAfter(docPath('movimientosInventario', id + '_1')).data.compraId == id)
         && (n <= 2 || getAfter(docPath('movimientosInventario', id + '_2')).data.compraId == id)
         && (n <= 3 || getAfter(docPath('movimientosInventario', id + '_3')).data.compraId == id)
-        && (n <= 4 || getAfter(docPath('movimientosInventario', id + '_4')).data.compraId == id)
-        && (n <= 5 || getAfter(docPath('movimientosInventario', id + '_5')).data.compraId == id)
-        && (n <= 6 || getAfter(docPath('movimientosInventario', id + '_6')).data.compraId == id)
-        && (n <= 7 || getAfter(docPath('movimientosInventario', id + '_7')).data.compraId == id);
+        && (n <= 4 || getAfter(docPath('movimientosInventario', id + '_4')).data.compraId == id);
     }
     match /compras/{id} {
-      allow read: if canStock();
-      allow create: if canStock() && validPurchase(request.resource.data)
+      allow read: if canPurchase();
+      allow create: if canPurchase() && validPurchase(request.resource.data)
         && request.resource.data.keys().hasOnly(['proveedorId', 'proveedorNombre', 'lineas', 'estado', 'creadoPor',
           'creadoPorNombre', 'creadoEn'])
         && request.resource.data.keys().hasAll(['proveedorId', 'proveedorNombre', 'lineas', 'estado', 'creadoPor',
@@ -1241,11 +1249,9 @@ service cloud.firestore {
         && request.resource.data.creadoPorNombre == get(profilePath()).data.nombre
         && request.resource.data.creadoEn == request.time;
       // Pendiente → recibida (con el movimiento de cada línea en el mismo lote) o
-      // cancelada con motivo. Quien creó la compra no la recibe (salvo Admin y
-      // Superadmin): separación de funciones.
-      allow update: if canStock() && resource.data.estado == 'pendiente'
+      // cancelada con motivo. Solo Admin y Superadmin (Cocina no compra).
+      allow update: if canPurchase() && resource.data.estado == 'pendiente'
         && ((request.resource.data.estado == 'recibida'
-            && (request.auth.uid != resource.data.creadoPor || isAdmin())
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'recibidoPor', 'recibidoPorNombre', 'recibidoEn'])
             && request.resource.data.recibidoPor == request.auth.uid
             && request.resource.data.recibidoPorNombre == get(profilePath()).data.nombre
@@ -1302,13 +1308,165 @@ service cloud.firestore {
     }
     match /recetas/{dish} {
       allow read: if canStock() || canConsume();
-      allow create, update: if canStock() && exists(docPath('carta', dish))
+      allow create, update: if isAdmin() && exists(docPath('carta', dish))
         && request.resource.data.keys().hasOnly(['ingredientes', 'actualizadoPor', 'actualizadoEn'])
         && request.resource.data.keys().hasAll(['ingredientes', 'actualizadoPor', 'actualizadoEn'])
         && validIngredients(request.resource.data.ingredientes)
         && request.resource.data.actualizadoPor == request.auth.uid
         && request.resource.data.actualizadoEn == request.time;
       allow delete: if false;
+    }
+
+    // ------------------------------------------------------------- Utensilios
+    //
+    // Módulo independiente de los insumos (sin recetas ni descuentos). Mesero (con
+    // jornada abierta), Admin y Superadmin ven existencias, asignaciones e
+    // historial; Cocina y Cajero no tienen acceso. Catálogo, altas y ajustes: solo
+    // Admin/Superadmin. Mesero registra entregas, devoluciones, pérdidas, daños y
+    // deterioros. Los importes viven solo en costosUtensilios (Admin): ni el
+    // utensilio ni sus movimientos llevan dinero; el movimiento guarda la
+    // versionCosto vigente para que Admin calcule el valor sin que el Mesero lo vea.
+    function canUtensils() { return roleIs(['mesero', 'admin', 'superadmin']) && onShift(); }
+    function utensilInt(v) { return v is int && v >= 0 && v <= 1000000; }
+
+    // Alta del catálogo: sin existencias (se cargan con un movimiento «alta»),
+    // con su auditoría en el mismo lote. Con costo inicial, versión 1 inmutable.
+    function validUtensilNew(id, d) {
+      return d.keys().hasOnly(['nombre', 'disponible', 'enUso', 'stockMinimo', 'activo', 'versionCosto',
+          'ultimaAuditoriaId', 'creadoEn', 'actualizadoEn'])
+        && d.keys().hasAll(['nombre', 'disponible', 'enUso', 'stockMinimo', 'activo', 'versionCosto',
+          'ultimaAuditoriaId', 'creadoEn', 'actualizadoEn'])
+        && inventoryName(d.nombre, 2, 60)
+        && d.disponible == 0 && d.enUso == 0 && utensilInt(d.stockMinimo)
+        && d.activo == true
+        && (d.versionCosto == 0 || (d.versionCosto == 1 && existsAfter(docPath('costosUtensilios', id + '_1'))))
+        && d.creadoEn == request.time && d.actualizadoEn == request.time
+        && d.ultimaAuditoriaId is string && auditOk(d.ultimaAuditoriaId, id);
+    }
+    function utensilEdit(id, before, after) {
+      return after.diff(before).affectedKeys().hasOnly(['nombre', 'stockMinimo', 'activo', 'versionCosto',
+          'ultimaAuditoriaId', 'actualizadoEn'])
+        && inventoryName(after.nombre, 2, 60) && utensilInt(after.stockMinimo) && after.activo is bool
+        && (after.versionCosto == before.versionCosto
+          || (after.versionCosto == before.versionCosto + 1 && existsAfter(docPath('costosUtensilios', id + '_' + string(after.versionCosto)))))
+        && after.actualizadoEn == request.time
+        && after.ultimaAuditoriaId != before.ultimaAuditoriaId
+        && auditOk(after.ultimaAuditoriaId, id);
+    }
+    // Las existencias solo cambian con un movimiento NUEVO de este mismo lote que
+    // las explique exactamente.
+    function utensilStock(id, before, after) {
+      let m = getAfter(docPath('movimientosUtensilios', after.ultimoMovimiento)).data;
+      return after.diff(before).affectedKeys().hasOnly(['disponible', 'enUso', 'ultimoMovimiento', 'actualizadoEn'])
+        && before.activo == true
+        && after.ultimoMovimiento is string && after.actualizadoEn == request.time
+        && m.creadoEn == request.time && m.utensilioId == id
+        && utensilInt(after.disponible) && utensilInt(after.enUso)
+        && after.disponible == before.disponible + m.deltaDisponible
+        && after.enUso == before.enUso + m.deltaEnUso
+        && m.disponibleResultante == after.disponible && m.enUsoResultante == after.enUso;
+    }
+    match /utensilios/{id} {
+      allow read: if canUtensils();
+      allow create: if isAdmin() && validUtensilNew(id, request.resource.data);
+      allow update: if (isAdmin() && utensilEdit(id, resource.data, request.resource.data))
+        || (canUtensils() && utensilStock(id, resource.data, request.resource.data));
+      allow delete: if false;
+    }
+
+    // Costos de utensilios: una versión inmutable por cambio, solo Admin.
+    match /costosUtensilios/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['utensilioId', 'version', 'costoUnitario', 'vigenteDesde', 'creadoPor'])
+        && request.resource.data.keys().hasAll(['utensilioId', 'version', 'costoUnitario', 'vigenteDesde', 'creadoPor'])
+        && request.resource.data.utensilioId is string
+        && request.resource.data.version is int && request.resource.data.version >= 1
+        && id == request.resource.data.utensilioId + '_' + string(request.resource.data.version)
+        && request.resource.data.costoUnitario is int && request.resource.data.costoUnitario >= 0
+        && request.resource.data.costoUnitario <= 10000000
+        && request.resource.data.vigenteDesde == request.time
+        && request.resource.data.creadoPor == request.auth.uid
+        && getAfter(docPath('utensilios', request.resource.data.utensilioId)).data.versionCosto == request.resource.data.version;
+      allow update, delete: if false;
+    }
+
+    // Directorio mínimo de meseros para elegir destinatario (solo UID, nombre y si
+    // está activo; sin documento, correo ni celular). Lo mantiene la administración
+    // en el mismo lote que el cambio del perfil: el estado debe coincidir con el
+    // perfil tal como queda. El movimiento de utensilios sigue validando al
+    // destinatario contra `usuarios`, así que un directorio desfasado no concede nada.
+    match /directorioMeseros/{uid} {
+      allow read: if canUtensils();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['nombre', 'activo', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['nombre', 'activo', 'actualizadoEn'])
+        && request.resource.data.nombre is string
+        && request.resource.data.activo is bool
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.nombre == getAfter(docPath('usuarios', uid)).data.nombre
+        && request.resource.data.activo == (getAfter(docPath('usuarios', uid)).data.rol == 'mesero'
+          && getAfter(docPath('usuarios', uid)).data.activo == true);
+      allow delete: if false;
+    }
+
+    // Lo que cada mesero tiene en uso (id {utensilio}_{mesero}). Solo cambia junto
+    // al movimiento que lo explica, que además apunta a esta asignación.
+    match /asignacionesUtensilios/{id} {
+      allow read: if canUtensils();
+      allow create, update: if canUtensils()
+        && request.resource.data.keys().hasOnly(['utensilioId', 'meseroId', 'meseroNombre', 'cantidad', 'ultimoMovimiento', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['utensilioId', 'meseroId', 'meseroNombre', 'cantidad', 'ultimoMovimiento', 'actualizadoEn'])
+        && id == request.resource.data.utensilioId + '_' + request.resource.data.meseroId
+        && utensilInt(request.resource.data.cantidad)
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.ultimoMovimiento is string
+        && getAfter(docPath('movimientosUtensilios', request.resource.data.ultimoMovimiento)).data.creadoEn == request.time
+        && getAfter(docPath('movimientosUtensilios', request.resource.data.ultimoMovimiento)).data.utensilioId == request.resource.data.utensilioId
+        && getAfter(docPath('movimientosUtensilios', request.resource.data.ultimoMovimiento)).data.meseroId == request.resource.data.meseroId
+        && request.resource.data.cantidad == (resource == null ? 0 : resource.data.cantidad)
+          + getAfter(docPath('movimientosUtensilios', request.resource.data.ultimoMovimiento)).data.deltaEnUso;
+      allow delete: if false;
+    }
+
+    function utensilDeltas(d) {
+      return d.tipo == 'entrega' ? (d.deltaDisponible == -d.cantidad && d.deltaEnUso == d.cantidad)
+        : d.tipo == 'devolucion' ? (d.deltaDisponible == d.cantidad && d.deltaEnUso == -d.cantidad)
+        : d.tipo in ['perdida', 'dano', 'deterioro'] ? (d.deltaDisponible == 0 && d.deltaEnUso == -d.cantidad)
+        : d.tipo == 'alta' ? (d.deltaDisponible == d.cantidad && d.deltaEnUso == 0)
+        : (d.deltaEnUso == 0 && (d.deltaDisponible == d.cantidad || d.deltaDisponible == -d.cantidad));
+    }
+    function validUtensilMovement(id, d) {
+      let u = getAfter(docPath('utensilios', d.utensilioId)).data;
+      let toMesero = d.tipo in ['entrega', 'devolucion', 'perdida', 'dano', 'deterioro'];
+      return d.keys().hasOnly(['utensilioId', 'utensilioNombre', 'tipo', 'cantidad', 'deltaDisponible', 'deltaEnUso',
+          'disponibleResultante', 'enUsoResultante', 'meseroId', 'meseroNombre', 'versionCosto', 'motivo',
+          'creadoPor', 'creadoPorNombre', 'creadoEn'])
+        && d.keys().hasAll(['utensilioId', 'utensilioNombre', 'tipo', 'cantidad', 'deltaDisponible', 'deltaEnUso',
+          'disponibleResultante', 'enUsoResultante', 'versionCosto', 'motivo', 'creadoPor', 'creadoPorNombre', 'creadoEn'])
+        && d.tipo in ['entrega', 'devolucion', 'perdida', 'dano', 'deterioro', 'alta', 'ajuste']
+        && (toMesero || isAdmin())
+        && d.utensilioId is string && d.utensilioNombre == u.nombre && u.ultimoMovimiento == id
+        && d.cantidad is int && d.cantidad >= 1 && d.cantidad <= 1000000
+        && d.deltaDisponible is int && d.deltaEnUso is int && utensilDeltas(d)
+        && utensilInt(d.disponibleResultante) && utensilInt(d.enUsoResultante)
+        && d.versionCosto == u.versionCosto
+        && d.motivo is string && d.motivo.size() <= 120
+        && (d.tipo in ['entrega', 'devolucion', 'alta'] || d.motivo.trim().size() >= 3)
+        && (toMesero
+          ? (d.meseroId is string && d.meseroNombre == get(docPath('usuarios', d.meseroId)).data.nombre
+              && get(docPath('usuarios', d.meseroId)).data.rol == 'mesero'
+              && get(docPath('usuarios', d.meseroId)).data.activo == true
+              && getAfter(docPath('asignacionesUtensilios', d.utensilioId + '_' + d.meseroId)).data.ultimoMovimiento == id)
+          : (!('meseroId' in d) && !('meseroNombre' in d)))
+        && d.creadoPor == request.auth.uid
+        && d.creadoPorNombre == get(profilePath()).data.nombre
+        && d.creadoEn == request.time;
+    }
+    match /movimientosUtensilios/{id} {
+      allow read: if canUtensils();
+      allow create: if canUtensils() && validUtensilMovement(id, request.resource.data);
+      allow update, delete: if false;
     }
 
     match /{document=**} {

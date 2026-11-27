@@ -11,6 +11,14 @@ abstract final class FirestorePaths {
   static const movimientosInventario = 'movimientosInventario';
   static const descuentosInventario = 'descuentosInventario';
   static const excepcionesInventario = 'excepcionesInventario';
+  static const costosInsumos = 'costosInsumos';
+
+  // Utensilios (independiente de los insumos).
+  static const utensilios = 'utensilios';
+  static const directorioMeseros = 'directorioMeseros';
+  static const asignacionesUtensilios = 'asignacionesUtensilios';
+  static const movimientosUtensilios = 'movimientosUtensilios';
+  static const costosUtensilios = 'costosUtensilios';
 
   static const categorias = 'categorias';
   static const cartaFotos = 'cartaFotos';

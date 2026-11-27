@@ -19,12 +19,24 @@
  * Flujo: el Superadmin solicita la eliminación en la app (Terminales →
  * Solicitar eliminación definitiva; queda auditada) y aquí se procesa. Sin
  * solicitud el script se niega, salvo con --sin-solicitud (uso excepcional).
+ *
+ * Modo --retirar-cuenta: elimina SOLO la cuenta de Authentication de una antigua
+ * terminal y sus credenciales de enlace (terminalClaves, terminalPruebas y la
+ * solicitud de eliminación). CONSERVA terminales/{uid} (nombre e historial), las
+ * asistencias, la auditoría y todos los qrTokens. Solo actúa sobre cuentas que
+ * cumplen los cuatro criterios de tools/lib/terminal_criteria.js.
+ *   node delete_terminal.js <uid> --retirar-cuenta                    # simulación
+ *   node delete_terminal.js <uid> --retirar-cuenta --execute          # terminal que migra a Caja
+ *   node delete_terminal.js <uid> --retirar-cuenta --marcar-retirada --execute
+ *       # terminal que se retira del todo: queda activo=false, retirada=true
+ * Sin --marcar-retirada el documento de la terminal NO se modifica.
  */
 const fs = require('node:fs');
 const readline = require('node:readline');
 const admin = require('firebase-admin');
 const { State, TerminalDeletionError, assertValidUid, execute, inspect, listPending } =
   require('./lib/terminal_deletion');
+const { executeRetirement, inspectRetirement } = require('./lib/terminal_retirement');
 
 const EXPECTED_PROJECT = 'la-granja-azul-app';
 
@@ -80,17 +92,91 @@ function printReport(r, project, mode) {
   }
 }
 
+function printRetirementReport(r, project, mode) {
+  const si = (v) => (v ? 'sí' : 'no existe');
+  console.log(`\nProyecto : ${project}`);
+  console.log(`Modo     : RETIRO DE CUENTA — ${mode}`);
+  console.log(`UID      : ${r.uid}`);
+  console.log(`Terminal : ${r.terminal ? `"${r.terminal.nombre}" (${r.terminal.activo === false ? 'inhabilitada' : 'activa'}${r.terminal.retirada ? ', retirada' : ''})` : 'sin documento terminales/{uid}'}`);
+  console.log(`Correo   : ${r.auth ? r.auth.email : 'la cuenta de Authentication ya no existe'}`);
+  console.log(`Estado   : ${r.state}`);
+  console.log('\nSe CONSERVAN (no se tocan):');
+  console.log(`  terminales/{uid}             : ${r.terminal ? (r.marcar ? 'sí; se marca activo=false, retirada=true' : 'sí, sin modificar') : 'no existe'}`);
+  console.log(`  asistencias de esta terminal : ${r.conservar.asistencias}`);
+  console.log(`  registros de auditoría       : ${r.conservar.auditoria} (se añadirá 1 del retiro)`);
+  console.log(`  qrTokens de la terminal      : ${r.conservar.qrTokens} (todos se conservan)`);
+  console.log('\nSe ELIMINARÁN:');
+  console.log(`  cuenta de Authentication : ${r.eliminar.cuentaAuth ? 'sí' : 'ya eliminada'}`);
+  console.log(`  terminalClaves/{uid}     : ${si(r.eliminar.terminalClaves)}`);
+  console.log(`  terminalPruebas/{uid}    : ${si(r.eliminar.terminalPruebas)}`);
+  console.log(`  solicitud de la app      : ${si(r.eliminar.solicitud)}`);
+  if (r.blockers.length) {
+    console.log('\nBLOQUEADO:');
+    r.blockers.forEach((b) => console.log(`  - ${b}`));
+  }
+  if (r.state === State.resume) {
+    console.log('\nLa cuenta de Authentication ya no existe pero quedan documentos: una ' +
+      'ejecución anterior se interrumpió. Se completará el retiro.');
+  }
+}
+
+async function retire({ auth, db, uid, run, mark }) {
+  const report = await inspectRetirement({ auth, db, uid, marcarRetirada: mark });
+  printRetirementReport(report, EXPECTED_PROJECT,
+    run ? 'EJECUCIÓN REAL' : 'SIMULACIÓN (no se cambia nada)');
+  if (report.state === State.blocked) fail('\nNo se puede continuar.');
+  if (report.state === State.done) {
+    console.log('\nNo queda nada que retirar para este UID.');
+    return;
+  }
+  if (!run) {
+    console.log('\nSimulación terminada. Para ejecutar: añade --execute.');
+    return;
+  }
+  if (!process.stdin.isTTY) fail('\nLa confirmación requiere una terminal interactiva.');
+  console.log('\nEsta acción es IRREVERSIBLE: la cuenta de Authentication no se puede recuperar.');
+  if ((await ask(`Escribe el ID del proyecto (${EXPECTED_PROJECT}): `)) !== EXPECTED_PROJECT) {
+    fail('El ID del proyecto no coincide. Nada se eliminó.');
+  }
+  if ((await ask('Escribe el UID de la terminal: ')) !== uid) {
+    fail('El UID no coincide. Nada se eliminó.');
+  }
+  try {
+    const { progress } = await executeRetirement({
+      auth, db, uid, FieldValue: admin.firestore.FieldValue, marcarRetirada: mark,
+    });
+    console.log('\nCuenta retirada; la terminal se conserva.');
+    console.log(`  cuenta de Authentication eliminada : ${progress.cuentaAuth}`);
+    console.log(`  documentos de enlace actualizados  : ${progress.documentos}`);
+  } catch (e) {
+    if (e instanceof TerminalDeletionError) {
+      console.error(`\nERROR: ${e.message}`);
+      console.error('Estado real tras el fallo:');
+      console.error(`  cuenta de Authentication eliminada : ${e.progress.cuentaAuth}`);
+      console.error(`  documentos de enlace actualizados  : ${e.progress.documentos}`);
+      console.error('La operación NO está completa. Vuelve a ejecutar el mismo comando ' +
+        'para terminarla (es seguro repetirlo).');
+      process.exit(2);
+    }
+    throw e;
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const run = args.includes('--execute');
   const pendingMode = args.includes('--pendientes');
+  const retireMode = args.includes('--retirar-cuenta');
+  const mark = args.includes('--marcar-retirada');
   const requireRequest = !args.includes('--sin-solicitud');
   const uid = args.find((a) => !a.startsWith('--'));
-  const known = ['--execute', '--pendientes', '--sin-solicitud'];
+  const known = ['--execute', '--pendientes', '--sin-solicitud', '--retirar-cuenta', '--marcar-retirada'];
   const unknown = args.filter((a) => a.startsWith('--') && !known.includes(a));
-  if (unknown.length || (pendingMode ? Boolean(uid) || run : !uid)) {
+  if (unknown.length || (pendingMode ? Boolean(uid) || run : !uid)
+      || (mark && !retireMode) || (retireMode && (pendingMode || args.includes('--sin-solicitud')))) {
     fail('Uso: node delete_terminal.js --pendientes\n' +
-      '     node delete_terminal.js <uid> [--execute] [--sin-solicitud]');
+      '     node delete_terminal.js <uid> [--execute] [--sin-solicitud]\n' +
+      '     node delete_terminal.js <uid> --retirar-cuenta [--marcar-retirada] [--execute]');
   }
   if (!pendingMode) {
     try {
@@ -131,6 +217,11 @@ async function main() {
       console.log(`  ${p.uid}  "${p.nombre}"  ${p.solicitadoEn ? p.solicitadoEn.toISOString() : ''}`);
     }
     console.log('\nSimular una: node delete_terminal.js <uid>');
+    return;
+  }
+
+  if (retireMode) {
+    await retire({ auth, db, uid, run, mark });
     return;
   }
 

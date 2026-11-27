@@ -1,3 +1,5 @@
+> **Reemplazado el 2026-11-27.** El módulo «Inventario» y el rol Almacén se retiraron: usar `docs/CHECKLIST_FISICO_INVENTARIOS.md`. Este archivo se conserva solo como historial de la Fase 7.
+
 # Checklist de prueba física — Fase 7 (inventario, recetas, costos, proveedores y compras)
 
 Lo que las pruebas automatizadas **no** cubren: Firebase real y varios dispositivos. Nada de esto se ha ejecutado todavía.

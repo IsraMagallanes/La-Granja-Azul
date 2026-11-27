@@ -150,24 +150,64 @@
       "delete": [],
       "special": []
     },
-    "inventory": {
+    "supplies": {
       "read": [
         "superadmin",
         "admin",
-        "almacen"
+        "cocina"
       ],
       "create": [
         "superadmin",
         "admin",
-        "almacen"
+        "cocina"
       ],
       "update": [
         "superadmin",
         "admin",
-        "almacen"
+        "cocina"
+      ],
+      "delete": [],
+      "special": [
+        "superadmin",
+        "admin"
+      ]
+    },
+    "purchasing": {
+      "read": [
+        "superadmin",
+        "admin"
+      ],
+      "create": [
+        "superadmin",
+        "admin"
+      ],
+      "update": [
+        "superadmin",
+        "admin"
       ],
       "delete": [],
       "special": []
+    },
+    "utensils": {
+      "read": [
+        "superadmin",
+        "admin",
+        "mesero"
+      ],
+      "create": [
+        "superadmin",
+        "admin",
+        "mesero"
+      ],
+      "update": [
+        "superadmin",
+        "admin"
+      ],
+      "delete": [],
+      "special": [
+        "superadmin",
+        "admin"
+      ]
     },
     "reports": {
       "read": [
@@ -198,16 +238,14 @@
         "admin",
         "mesero",
         "cocina",
-        "cajero",
-        "almacen"
+        "cajero"
       ],
       "create": [
         "superadmin",
         "admin",
         "mesero",
         "cocina",
-        "cajero",
-        "almacen"
+        "cajero"
       ],
       "update": [],
       "delete": [],

@@ -16,7 +16,7 @@ Lo que las pruebas automatizadas **no** cubren: Firebase real con datos reales y
 | 8 | «Asistencia» | Jornadas y horas por persona; una jornada abierta aparece como «abierta» y no suma horas; coincide con Asistencia (admin) | ☐ |
 | 9 | «Inventario» | Valor del stock = suma stock × costo de los insumos activos; compras recibidas y mermas del periodo; lista de stock bajo | ☐ |
 | 10 | Botón «Actualizar» de cada pestaña | Vuelve a leer y refleja un cobro o compra nuevos | ☐ |
-| 11 | Mesero, cajero, cocinero y almacén | No ven «Reportes» en el menú; abrir `/app/reportes` los redirige | ☐ |
+| 11 | Mesero, cajero y cocinero | No ven «Reportes» en el menú; abrir `/app/reportes` los redirige | ☐ |
 | 12 | Consola de Firebase → Uso | Abrir los reportes unas 10 veces no excede por mucho las lecturas esperadas (ventas ≈ n.º de cobros; platos ≈ n.º de pedidos) | ☐ |
 | 13 | Celular (≈ 400 px): recorrer las 4 pestañas y los periodos | Sin desbordes; los filtros de periodo se acomodan en varias líneas | ☐ |
 

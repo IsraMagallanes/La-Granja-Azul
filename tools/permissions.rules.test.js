@@ -17,7 +17,7 @@ const { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBat
 const matrix = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'fixtures', 'permission_matrix.json'), 'utf8'));
 const exempt = new Set(matrix.shiftExemptRoles);
-const ROLE_UID = { superadmin: 'super', admin: 'admin', mesero: 'w1', cocina: 'k', cajero: 'cash', almacen: 'stock' };
+const ROLE_UID = { superadmin: 'super', admin: 'admin', mesero: 'w1', cocina: 'k', cajero: 'cash' };
 
 let env;
 const host = (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8180').split(':');
@@ -117,10 +117,17 @@ const ops = {
     batch.set(doc(d, 'cajaActiva', 'actual'), { cajaId: 'cx', ...box });
     return batch.commit();
   },
-  // Se sondea proveedores: Cocina lee insumos/recetas por la Fase 8B (descuento), no el módulo.
-  'inventory.read': (d) => getDocs(collection(d, 'proveedores')),
-  'inventory.create': (d) => setDoc(doc(d, 'insumos', 'nuevo'), { nombre: 'Aceite', unidad: 'l', stock: 0, stockMinimo: 0,
-    costoUnitario: 0, activo: true, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }),
+  'supplies.read': (d) => getDocs(collection(d, 'insumos')),
+  'supplies.create': (d) => setDoc(doc(d, 'insumos', 'nuevo'), { nombre: 'Aceite', unidad: 'l', stock: 0, stockMinimo: 0,
+    activo: true, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }),
+  // Costos de insumos: solo la administración (Cocina nunca los lee).
+  'supplies.special': (d) => getDocs(collection(d, 'costosInsumos')),
+  'purchasing.read': (d) => getDocs(collection(d, 'proveedores')),
+  'purchasing.create': (d) => setDoc(doc(d, 'proveedores', 'nuevo'), { nombre: 'Nuevo SAC', ruc: '', telefono: '', contacto: '',
+    activo: true, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }),
+  'utensils.read': (d) => getDocs(collection(d, 'utensilios')),
+  // Costos y valoración de utensilios: solo la administración (el Mesero nunca los lee).
+  'utensils.special': (d) => getDocs(collection(d, 'costosUtensilios')),
   'restrictions.read': (d) => getDoc(doc(d, 'restricciones', '12345678')),
   'audit.read': (d) => getDocs(collection(d, 'auditoria')),
 };
@@ -133,7 +140,10 @@ const COVERED_ELSEWHERE = {
   'staff.special': 'personal.rules.test.js (solo el Superadmin asigna administradores)',
   'kitchen.read': 'orders.rules.test.js (cocina y administración leen los pedidos; la caja también por orders.read)',
   'cashier.update': 'caja.rules.test.js (cobro, movimientos y cierre de caja)',
-  'inventory.update': 'inventario.rules.test.js (stock con movimiento, compras, recetas, proveedores)',
+  'supplies.update': 'inventario.rules.test.js (stock con movimiento, recetas, costos)',
+  'purchasing.update': 'inventario.rules.test.js (compras, recepción, proveedores)',
+  'utensils.create': 'utensilios.rules.test.js (el Mesero registra movimientos; el catálogo es del Admin)',
+  'utensils.update': 'utensilios.rules.test.js (catálogo con auditoría, existencias y asignaciones)',
   'attendance.update': 'asistencia.rules.test.js (horarios y regularización)',
   'selfAttendance.update': 'sin acción concedida',
   'terminals.create': 'asistencia.rules.test.js (alta de terminales)',
@@ -180,7 +190,7 @@ for (const cell of cells.filter((c) => ops[c.key])) {
 // --------------------------------------------------- Asistencia como condición
 const OPERATIONAL = ['tables.read', 'orders.read', 'orders.create', 'orders.update',
   'reservations.read', 'reservations.create', 'reservations.update', 'kitchen.update',
-  'cashier.read', 'cashier.create', 'inventory.read', 'inventory.create'];
+  'cashier.read', 'cashier.create', 'supplies.read', 'supplies.create', 'purchasing.read', 'utensils.read'];
 
 for (const shift of ['none', 'closed']) {
   for (const key of OPERATIONAL) {
@@ -234,8 +244,8 @@ test('la jornada abierta de otro trabajador no concede acceso', async () => {
 
 test('la jornada abierta no reemplaza al rol ni al perfil activo', async () => {
   await seed('open');
-  // Almacén con jornada abierta sigue sin ver pedidos; cocina inactiva tampoco.
-  await assertFails(getDoc(doc(as('stock'), 'pedidos', 'seed')));
+  // El cajero con jornada abierta sigue sin ver pedidos; cocina inactiva tampoco.
+  await assertFails(getDocs(collection(as('cash'), 'insumos')));
   await env.withSecurityRulesDisabled((ctx) =>
     updateDoc(doc(ctx.firestore(), 'usuarios', 'k'), { activo: false }));
   await assertFails(getDoc(doc(as('k'), 'pedidos', 'seed')));

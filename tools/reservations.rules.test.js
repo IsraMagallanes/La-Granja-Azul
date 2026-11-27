@@ -32,7 +32,7 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
     for (const [uid, rol] of Object.entries({ w1: 'mesero', w2: 'mesero', admin: 'admin', super: 'superadmin',
-      k: 'cocina', cash: 'cajero', stock: 'almacen', off: 'mesero' })) {
+      k: 'cocina', cash: 'cajero', off: 'mesero' })) {
       await setDoc(doc(d, 'usuarios', uid), { rol, nombre: `Usuario ${uid}`, activo: true });
     }
     for (const uid of ['w1', 'w2', 'k', 'cash', 'off']) {
@@ -59,7 +59,7 @@ test('admin, superadmin y mesero con jornada abierta crean reservaciones', async
 });
 
 test('cocina, almacén, anónimo, inactivo, sin jornada o sin correo verificado no crean', async () => {
-  for (const uid of ['k', 'cash', 'stock', 'off']) {
+  for (const uid of ['k', 'cash', 'off']) {
     await assertFails(setDoc(doc(db(uid), 'reservaciones', 'x'), data(uid)));
   }
   await assertFails(setDoc(doc(anon(), 'reservaciones', 'x'), data('w1')));
@@ -70,7 +70,7 @@ test('lectura: personal de sala y caja con jornada; el resto no', async () => {
   for (const uid of ['admin', 'super', 'w1', 'w2', 'cash']) {
     await assertSucceeds(getDocs(collection(db(uid), 'reservaciones')));
   }
-  for (const uid of ['k', 'stock', 'off']) await assertFails(getDocs(collection(db(uid), 'reservaciones')));
+  for (const uid of ['k', 'off']) await assertFails(getDocs(collection(db(uid), 'reservaciones')));
   await assertFails(getDocs(collection(anon(), 'reservaciones')));
   await assertFails(getDoc(doc(db('w1', false), 'reservaciones/pend')));
 });

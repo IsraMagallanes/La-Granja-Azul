@@ -57,7 +57,6 @@ class Supply {
     required this.unit,
     required this.stock,
     required this.minStock,
-    required this.unitCost,
     required this.active,
   });
   final String id;
@@ -65,7 +64,6 @@ class Supply {
   final SupplyUnit unit;
   final int stock;
   final int minStock;
-  final int unitCost;
   final bool active;
 
   bool get isLow => active && minStock > 0 && stock <= minStock;
@@ -78,7 +76,6 @@ class Supply {
     unit: SupplyUnit.values.byName(d['unidad'] as String),
     stock: d['stock'] as int,
     minStock: d['stockMinimo'] as int,
-    unitCost: d['costoUnitario'] as int,
     active: d['activo'] as bool,
   );
 }
@@ -292,8 +289,9 @@ class RecipeIngredient {
   };
 }
 
-/// Receta de un plato (por porción) y su costo con el costo vigente de cada
-/// insumo. Un insumo que ya no existe cuenta como costo 0 y se marca.
+/// Receta de un plato (por porción). El costo con el costo vigente de cada
+/// insumo solo lo calcula la administración: [costs] viene de `costosInsumos`
+/// (centavos por unidad entera). Un insumo sin costo cuenta como 0.
 class Recipe {
   const Recipe(this.dishId, this.ingredients);
   final String dishId;
@@ -305,9 +303,9 @@ class Recipe {
       ?RecipeIngredient.tryParse(i),
   ]);
 
-  int cost(Map<String, Supply> supplies) => ingredients.fold(
+  int cost(Map<String, int> costs) => ingredients.fold(
     0,
-    (sum, i) => sum + Qty.cost(i.qty, supplies[i.supplyId]?.unitCost ?? 0),
+    (sum, i) => sum + Qty.cost(i.qty, costs[i.supplyId] ?? 0),
   );
 
   bool hasMissing(Map<String, Supply> supplies) =>

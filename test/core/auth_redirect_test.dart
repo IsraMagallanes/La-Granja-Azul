@@ -39,7 +39,6 @@ void main() {
       UserRole.mesero: AppRoute.waiter,
       UserRole.cocina: AppRoute.kitchen,
       UserRole.cajero: AppRoute.cashier,
-      UserRole.almacen: AppRoute.inventory,
     };
     for (final e in homes.entries) {
       expect(
@@ -54,22 +53,19 @@ void main() {
     SessionState shift(UserRole role, {required bool open}) =>
         Authenticated(buildUser(role: role), onShift: open);
 
-    const operational = [
+    final operational = [
       AppRoute.waiter,
       AppRoute.kitchen,
       AppRoute.cashier,
-      AppRoute.inventory,
+      AppRoute.supplies,
+      AppRoute.purchasing,
+      AppRoute.utensils,
       AppRoute.tables,
       AppRoute.orders,
     ];
 
     test('sin entrada, cada rol operativo cae en «Mi asistencia»', () {
-      for (final role in [
-        UserRole.mesero,
-        UserRole.cocina,
-        UserRole.cajero,
-        UserRole.almacen,
-      ]) {
+      for (final role in [UserRole.mesero, UserRole.cocina, UserRole.cajero]) {
         final s = shift(role, open: false);
         expect(
           redirect.redirect(AppRoute.login.path, s),
@@ -160,9 +156,9 @@ void main() {
       expect(
         redirect.redirect(
           AppRoute.users.path,
-          shift(UserRole.almacen, open: true),
+          shift(UserRole.cocina, open: true),
         ),
-        AppRoute.inventory.path,
+        AppRoute.kitchen.path,
       );
     });
 

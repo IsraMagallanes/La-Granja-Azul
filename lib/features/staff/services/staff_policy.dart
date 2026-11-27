@@ -10,7 +10,6 @@ class StaffPolicy {
     UserRole.mesero,
     UserRole.cocina,
     UserRole.cajero,
-    UserRole.almacen,
   };
 
   /// Roles que [actor] puede asignar al crear o editar. Nadie crea

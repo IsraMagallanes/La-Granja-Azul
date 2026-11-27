@@ -9,7 +9,6 @@ Supply supply(String id, int stock, {bool active = true}) => Supply(
   unit: SupplyUnit.kg,
   stock: stock,
   minStock: 0,
-  unitCost: 100,
   active: active,
 );
 

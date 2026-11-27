@@ -24,11 +24,23 @@ enum AppRoute {
   waiter('/app/mesero', 'Mesero', Icons.room_service, Permission.takeOrders),
   kitchen('/app/cocina', 'Cocina', Icons.soup_kitchen, Permission.useKitchen),
   cashier('/app/caja', 'Caja', Icons.point_of_sale, Permission.useCashier),
-  inventory(
-    '/app/inventario',
-    'Inventario',
+  supplies(
+    '/app/insumos',
+    'Insumos',
     Icons.inventory_2,
-    Permission.manageInventory,
+    Permission.manageSupplies,
+  ),
+  purchasing(
+    '/app/compras',
+    'Compras',
+    Icons.shopping_cart,
+    Permission.managePurchasing,
+  ),
+  utensils(
+    '/app/utensilios',
+    'Utensilios',
+    Icons.restaurant,
+    Permission.manageUtensils,
   ),
   users('/app/usuarios', 'Usuarios', Icons.group, Permission.manageStaff),
   roles(
@@ -91,7 +103,9 @@ enum AppRoute {
     waiter ||
     kitchen ||
     cashier ||
-    inventory ||
+    supplies ||
+    purchasing ||
+    utensils ||
     tables ||
     orders ||
     reservations => true,

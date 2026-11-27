@@ -135,7 +135,7 @@ class _Check {
           .where('nombre', isEqualTo: name)
           .get();
       if (found.docs.isEmpty) {
-        await inventory.createSupply(name, SupplyUnit.kg, 0, 100);
+        await inventory.createSupply(name, SupplyUnit.kg, 0);
         found = await db
             .collection('insumos')
             .where('nombre', isEqualTo: name)

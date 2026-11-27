@@ -14,6 +14,7 @@ class FirestoreInventoryRepository implements InventoryRepository {
   static const _suppliers = 'proveedores';
   static const _purchases = 'compras';
   static const _recipes = 'recetas';
+  static const _costs = 'costosInsumos';
 
   CollectionReference<Map<String, dynamic>> _col(String name) =>
       _db.collection(name);
@@ -69,35 +70,48 @@ class FirestoreInventoryRepository implements InventoryRepository {
   Stream<List<Recipe>> watchRecipes() => _watch(_recipes, Recipe.fromMap);
 
   @override
-  Future<void> createSupply(
-    String name,
-    SupplyUnit unit,
-    int minStock,
-    int unitCost,
-  ) => _col(_supplies).add({
-    'nombre': name,
-    'unidad': unit.name,
-    'stock': 0,
-    'stockMinimo': minStock,
-    'costoUnitario': unitCost,
-    'activo': true,
-    'creadoEn': FieldValue.serverTimestamp(),
-    'actualizadoEn': FieldValue.serverTimestamp(),
-  });
+  Stream<Map<String, int>> watchSupplyCosts() => _col(_costs).snapshots().map(
+    (s) => {
+      for (final d in s.docs)
+        if (d.data()['costoUnitario'] is int)
+          d.id: d.data()['costoUnitario'] as int,
+    },
+  );
+
+  @override
+  Future<void> createSupply(String name, SupplyUnit unit, int minStock) =>
+      _col(_supplies).add({
+        'nombre': name,
+        'unidad': unit.name,
+        'stock': 0,
+        'stockMinimo': minStock,
+        'activo': true,
+        'creadoEn': FieldValue.serverTimestamp(),
+        'actualizadoEn': FieldValue.serverTimestamp(),
+      });
 
   @override
   Future<void> editSupply(
     String id, {
     required String name,
     required int minStock,
-    required int unitCost,
     required bool active,
   }) => _col(_supplies).doc(id).update({
     'nombre': name,
     'stockMinimo': minStock,
-    'costoUnitario': unitCost,
     'activo': active,
     'actualizadoEn': FieldValue.serverTimestamp(),
+  });
+
+  @override
+  Future<void> setSupplyCost(
+    String id,
+    int unitCost, {
+    required String actorUid,
+  }) => _col(_costs).doc(id).set({
+    'costoUnitario': unitCost,
+    'actualizadoEn': FieldValue.serverTimestamp(),
+    'actualizadoPor': actorUid,
   });
 
   @override
@@ -224,16 +238,21 @@ class FirestoreInventoryRepository implements InventoryRepository {
             'motivo': '',
             'compraId': id,
             'linea': n,
-            'costoUnitario': line.unitCost,
             'creadoPor': actorUid,
             'creadoPorNombre': name,
             'creadoEn': FieldValue.serverTimestamp(),
           });
           tx.update(_col(_supplies).doc(line.supplyId), {
             'stock': result,
-            'costoUnitario': line.unitCost,
             'ultimoMovimiento': move.id,
             'actualizadoEn': FieldValue.serverTimestamp(),
+          });
+          // El costo de la línea queda en la colección protegida; las reglas
+          // comprueban que coincide con la compra (opción B).
+          tx.set(_col(_costs).doc(line.supplyId), {
+            'costoUnitario': line.unitCost,
+            'actualizadoEn': FieldValue.serverTimestamp(),
+            'actualizadoPor': actorUid,
           });
         }
         tx.update(ref, {

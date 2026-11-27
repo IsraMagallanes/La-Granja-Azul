@@ -6,7 +6,7 @@ import '../../../core/time/lima_time.dart';
 import '../../../core/widgets/page_scaffold.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../menu/controllers/menu_providers.dart';
-import '../../orders/widgets/operation_button.dart';
+import '../../menu/models/dish.dart';
 import '../../orders/widgets/order_async_view.dart';
 import '../controllers/inventory_providers.dart';
 import '../models/inventory_models.dart';
@@ -14,17 +14,16 @@ import '../widgets/inventory_dialogs.dart';
 
 String _soles(int cents) => 'S/ ${(cents / 100).toStringAsFixed(2)}';
 
-/// Inventario: insumos y stock, movimientos, recetas y costos, proveedores y
-/// compras. Lo usan Almacén, Admin y Superadmin.
-class InventoryScreen extends StatelessWidget {
-  const InventoryScreen({super.key});
+/// Insumos (cocina): existencias, movimientos y recetas. Lo usan Cocina, Admin y
+/// Superadmin. Los costos solo los ven Admin y Superadmin: las pantallas que
+/// observan `supplyCostsProvider` se construyen únicamente para ellos.
+class SuppliesScreen extends StatelessWidget {
+  const SuppliesScreen({super.key});
 
   static const _tabs = [
     ('Insumos', Icons.inventory_2),
     ('Movimientos', Icons.swap_vert),
     ('Recetas', Icons.menu_book),
-    ('Proveedores', Icons.local_shipping),
-    ('Compras', Icons.shopping_cart),
   ];
 
   @override
@@ -42,13 +41,7 @@ class InventoryScreen extends StatelessWidget {
         ),
         const Expanded(
           child: TabBarView(
-            children: [
-              SuppliesTab(),
-              MovementsTab(),
-              RecipesTab(),
-              SuppliersTab(),
-              PurchasesTab(),
-            ],
+            children: [SuppliesTab(), MovementsTab(), RecipesTab()],
           ),
         ),
       ],
@@ -116,12 +109,12 @@ class _SuppliesTabState extends ConsumerState<SuppliesTab> {
   );
 }
 
-class _SupplyCard extends StatelessWidget {
+class _SupplyCard extends ConsumerWidget {
   const _SupplyCard({required this.supply});
   final Supply supply;
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context, WidgetRef ref) => Card(
     margin: const EdgeInsets.only(bottom: 10),
     child: Padding(
       padding: const EdgeInsets.all(12),
@@ -154,10 +147,11 @@ class _SupplyCard extends StatelessWidget {
             ],
           ),
           Text(
-            '${supply.stockLabel} · mínimo ${Qty.format(supply.minStock)} ${supply.unit.label} · '
-            '${_soles(supply.unitCost)} por ${supply.unit.label}',
+            '${supply.stockLabel} · mínimo ${Qty.format(supply.minStock)} ${supply.unit.label}',
             style: const TextStyle(color: AppColors.inkMuted),
           ),
+          // El costo solo existe para la administración.
+          if (actorIsAdminOf(ref)) _SupplyCostLine(supply: supply),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -184,6 +178,37 @@ class _SupplyCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Costo del insumo y botón para fijarlo. Solo se construye para Admin y
+/// Superadmin: es el único sitio de esta pantalla que lee `costosInsumos`.
+class _SupplyCostLine extends ConsumerWidget {
+  const _SupplyCostLine({required this.supply});
+  final Supply supply;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cost = ref.watch(supplyCostsProvider).value?[supply.id] ?? 0;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            cost == 0
+                ? 'Costo no registrado'
+                : '${_soles(cost)} por ${supply.unit.label}',
+            style: const TextStyle(color: AppColors.inkMuted),
+          ),
+        ),
+        TextButton(
+          onPressed: () => showActionDialog(
+            context,
+            SupplyCostDialog(supply: supply, cost: cost),
+          ),
+          child: const Text('Costo'),
+        ),
+      ],
+    );
+  }
 }
 
 class MovementsTab extends ConsumerWidget {
@@ -264,8 +289,8 @@ class RecipesTab extends ConsumerWidget {
             child: ListView(
               children: [
                 const SectionHeader(
-                  title: 'Recetas y costos',
-                  subtitle: 'Costo por porción con el costo vigente de cada insumo, y margen sobre el precio.',
+                  title: 'Recetas',
+                  subtitle: 'Insumos por porción de cada plato. El costo y el margen los ve la administración.',
                 ),
                 if (menu.dishes.isEmpty)
                   const StateMessage(
@@ -273,22 +298,19 @@ class RecipesTab extends ConsumerWidget {
                     title: 'No hay platos en la carta.',
                   ),
                 for (final d in menu.dishes)
-                  _RecipeRow(
-                    dish: d.name,
-                    price: (d.price * 100).round(),
-                    recipe: recipeById[d.id],
-                    supplies: byId,
-                    onEdit: () => showActionDialog(
-                      context,
-                      RecipeDialog(
-                        dishId: d.id,
-                        dishName: d.name,
-                        priceCents: (d.price * 100).round(),
-                        supplies: supplyList,
-                        recipe: recipeById[d.id],
-                      ),
+                  if (actorIsAdminOf(ref))
+                    _AdminRecipeRow(
+                      dish: d,
+                      recipe: recipeById[d.id],
+                      supplies: byId,
+                      supplyList: supplyList,
+                    )
+                  else
+                    _RecipeRow(
+                      dish: d.name,
+                      recipe: recipeById[d.id],
+                      supplies: byId,
                     ),
-                  ),
               ],
             ),
           );
@@ -298,28 +320,64 @@ class RecipesTab extends ConsumerWidget {
   }
 }
 
+/// Receta para Cocina: ingredientes y cantidades, sin costos.
 class _RecipeRow extends StatelessWidget {
   const _RecipeRow({
     required this.dish,
-    required this.price,
     required this.recipe,
     required this.supplies,
-    required this.onEdit,
   });
   final String dish;
-  final int price;
   final Recipe? recipe;
   final Map<String, Supply> supplies;
-  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     final r = recipe;
     final has = r != null && r.ingredients.isNotEmpty;
-    final cost = has ? r.cost(supplies) : 0;
     return Card(
       child: ListTile(
         title: Text(dish, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(
+          has
+              ? [
+                  for (final i in r.ingredients)
+                    '${Qty.format(i.qty)} ${supplies[i.supplyId]?.unit.label ?? ''} ${i.name}',
+                ].join(' · ')
+              : 'Sin receta',
+        ),
+      ),
+    );
+  }
+}
+
+/// Receta para la administración: costo por porción, margen y edición. Es el
+/// único lugar de esta pantalla que lee los costos de los insumos.
+class _AdminRecipeRow extends ConsumerWidget {
+  const _AdminRecipeRow({
+    required this.dish,
+    required this.recipe,
+    required this.supplies,
+    required this.supplyList,
+  });
+  final Dish dish;
+  final Recipe? recipe;
+  final Map<String, Supply> supplies;
+  final List<Supply> supplyList;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final costs = ref.watch(supplyCostsProvider).value ?? const <String, int>{};
+    final price = (dish.price * 100).round();
+    final r = recipe;
+    final has = r != null && r.ingredients.isNotEmpty;
+    final cost = has ? r.cost(costs) : 0;
+    return Card(
+      child: ListTile(
+        title: Text(
+          dish.name,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
         subtitle: Text(
           has
               ? '${r.ingredients.length} insumos · costo ${_soles(cost)} · precio ${_soles(price)} · '
@@ -327,185 +385,18 @@ class _RecipeRow extends StatelessWidget {
               : 'Sin receta · precio ${_soles(price)}',
         ),
         trailing: TextButton(
-          onPressed: onEdit,
+          onPressed: () => showActionDialog(
+            context,
+            RecipeDialog(
+              dishId: dish.id,
+              dishName: dish.name,
+              priceCents: price,
+              supplies: supplyList,
+              costs: costs,
+              recipe: recipe,
+            ),
+          ),
           child: Text(has ? 'Editar' : 'Crear'),
-        ),
-      ),
-    );
-  }
-}
-
-class SuppliersTab extends ConsumerWidget {
-  const SuppliersTab({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => OrderAsyncView(
-    value: ref.watch(suppliersProvider),
-    onRetry: () => ref.invalidate(suppliersProvider),
-    builder: (list) => PageBody(
-      child: ListView(
-        children: [
-          const SectionHeader(
-            title: 'Proveedores',
-            subtitle: 'No se borran: se desactivan para conservar el historial de compras.',
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              icon: const Icon(Icons.add),
-              onPressed: () =>
-                  showActionDialog(context, const SupplierDialog()),
-              label: const Text('Nuevo proveedor'),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (list.isEmpty)
-            const StateMessage(
-              icon: Icons.local_shipping,
-              title: 'Aún no hay proveedores.',
-            ),
-          for (final s in list)
-            Card(
-              child: ListTile(
-                title: Text(
-                  s.name,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: Text(
-                  [
-                    if (s.ruc.isNotEmpty) 'RUC ${s.ruc}',
-                    if (s.phone.isNotEmpty) s.phone,
-                    if (s.contact.isNotEmpty) s.contact,
-                  ].join(' · '),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!s.active)
-                      const StatusPill('Inactivo', tone: StatusTone.neutral),
-                    IconButton(
-                      tooltip: 'Editar',
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => showActionDialog(
-                        context,
-                        SupplierDialog(supplier: s),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    ),
-  );
-}
-
-class PurchasesTab extends ConsumerWidget {
-  const PurchasesTab({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => OrderAsyncView(
-    value: ref.watch(purchasesProvider),
-    onRetry: () => ref.invalidate(purchasesProvider),
-    builder: (list) => PageBody(
-      child: ListView(
-        children: [
-          const SectionHeader(
-            title: 'Compras',
-            subtitle: 'Al recibir una compra el stock sube y el costo de cada insumo se actualiza.',
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              icon: const Icon(Icons.add_shopping_cart),
-              onPressed: () => showActionDialog(
-                context,
-                PurchaseDialog(
-                  supplies: ref.read(suppliesProvider).value ?? const [],
-                  suppliers: ref.read(suppliersProvider).value ?? const [],
-                ),
-              ),
-              label: const Text('Nueva compra'),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (list.isEmpty)
-            const StateMessage(
-              icon: Icons.shopping_cart,
-              title: 'Aún no hay compras.',
-            ),
-          for (final p in list) _PurchaseCard(purchase: p),
-        ],
-      ),
-    ),
-  );
-}
-
-class _PurchaseCard extends ConsumerWidget {
-  const _PurchaseCard({required this.purchase});
-  final Purchase purchase;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final p = purchase;
-    final tone = switch (p.status) {
-      PurchaseStatus.pendiente => StatusTone.warning,
-      PurchaseStatus.recibida => StatusTone.success,
-      PurchaseStatus.cancelada => StatusTone.danger,
-    };
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${p.supplierName} · ${_soles(p.total)}',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-                StatusPill(p.status.label, tone: tone),
-              ],
-            ),
-            Text(
-              '${p.byName}${p.at == null ? '' : ' · ${LimaTime.formatDateTime(p.at!)}'}',
-              style: const TextStyle(color: AppColors.inkMuted),
-            ),
-            for (final l in p.lines)
-              Text('• ${Qty.format(l.qty)} ${l.name} × ${_soles(l.unitCost)}'),
-            if (p.cancelReason != null) Text('Motivo: ${p.cancelReason}'),
-            if (p.status == PurchaseStatus.pendiente)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Wrap(
-                  spacing: 8,
-                  children: [
-                    OperationButton(
-                      label: 'Recibir compra',
-                      onPressed: () => ref
-                          .read(inventoryServiceProvider)
-                          .receivePurchase(
-                            p,
-                            actorUid: actorUidOf(ref),
-                            isAdmin: actorIsAdminOf(ref),
-                          ),
-                    ),
-                    OutlinedButton(
-                      onPressed: () => showActionDialog(
-                        context,
-                        CancelPurchaseDialog(purchase: p),
-                      ),
-                      child: const Text('Cancelar'),
-                    ),
-                  ],
-                ),
-              ),
-          ],
         ),
       ),
     );

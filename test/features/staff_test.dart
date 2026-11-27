@@ -103,7 +103,6 @@ void main() {
         UserRole.mesero,
         UserRole.cocina,
         UserRole.cajero,
-        UserRole.almacen,
       });
       expect(
         policy.canAssign(UserRole.superadmin, UserRole.superadmin),
@@ -118,12 +117,7 @@ void main() {
     });
 
     test('roles operativos no administran a nadie', () {
-      for (final r in [
-        UserRole.mesero,
-        UserRole.cocina,
-        UserRole.cajero,
-        UserRole.almacen,
-      ]) {
+      for (final r in [UserRole.mesero, UserRole.cocina, UserRole.cajero]) {
         expect(policy.assignableRoles(r), isEmpty);
       }
     });

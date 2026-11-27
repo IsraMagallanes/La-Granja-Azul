@@ -140,15 +140,6 @@ void main() {
   });
 
   group('platos', () {
-    const pollo = Supply(
-      id: 'i1',
-      name: 'Pollo',
-      unit: SupplyUnit.kg,
-      stock: 0,
-      minStock: 0,
-      unitCost: 1200,
-      active: true,
-    );
     OrderItem item(String id, String name, double price, int q) =>
         OrderItem(dishId: id, name: name, price: price, quantity: q, notes: '');
 
@@ -167,7 +158,7 @@ void main() {
             RecipeIngredient(supplyId: 'i1', name: 'Pollo', qty: 500),
           ]),
         },
-        supplies: {'i1': pollo},
+        costs: const {'i1': 1200},
       );
       expect(report.rows.map((r) => r.name), ['Chicha', 'Brasa', 'Postre']);
       final brasa = report.rows[1];
@@ -226,7 +217,6 @@ void main() {
         unit: SupplyUnit.kg,
         stock: 10000,
         minStock: 2000,
-        unitCost: 1200,
         active: true,
       );
       const b = Supply(
@@ -235,7 +225,6 @@ void main() {
         unit: SupplyUnit.kg,
         stock: 1000,
         minStock: 2000,
-        unitCost: 300,
         active: true,
       );
       const off = Supply(
@@ -244,11 +233,11 @@ void main() {
         unit: SupplyUnit.und,
         stock: 5000,
         minStock: 0,
-        unitCost: 100,
         active: false,
       );
       final report = InventoryReport.build(
         supplies: [a, b, off],
+        costs: const {'a': 1200, 'b': 300, 'c': 100},
         receivedPurchases: [
           const Purchase(
             id: 'p',
@@ -339,6 +328,9 @@ void main() {
             ),
             suppliesProvider.overrideWith(
               (ref) => Stream.value(const <Supply>[]),
+            ),
+            supplyCostsProvider.overrideWith(
+              (ref) => Stream.value(const <String, int>{}),
             ),
             recipesProvider.overrideWith(
               (ref) => Stream.value(const <Recipe>[]),

@@ -49,7 +49,6 @@ app.*.map.json
 
 # Firebase / secretos
 tools/node_modules/
-tools/package-lock.json
 *-firebase-adminsdk-*.json
 serviceAccount*.json
 .env
@@ -57,3 +56,4 @@ serviceAccount*.json
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+tools/backups/

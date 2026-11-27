@@ -3,8 +3,7 @@ enum UserRole {
   admin('admin', 'Administrador'),
   mesero('mesero', 'Mesero'),
   cocina('cocina', 'Cocina'),
-  cajero('cajero', 'Cajero'),
-  almacen('almacen', 'Almacén');
+  cajero('cajero', 'Cajero');
 
   const UserRole(this.value, this.label);
 

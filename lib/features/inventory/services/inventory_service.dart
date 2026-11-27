@@ -5,8 +5,9 @@ import '../repositories/inventory_repository.dart';
 abstract final class InventoryValidation {
   static const maxCost =
       10000000; // S/ 100,000.00 por unidad, igual que las reglas
-  static const maxLines =
-      8; // provisional: validar en Firebase real (ver README)
+  // Máximo por compra: con 5 líneas la recepción usa ≈ 18 de los 20 accesos
+  // que Firestore permite por lote (ver docs/LIMITES_FIRESTORE.md).
+  static const maxLines = 5;
   static const maxIngredients = 30;
 
   static String? name(String? v, {int min = 2, int max = 60}) {
@@ -35,43 +36,46 @@ class InventoryService {
 
   Never _fail(String message) => throw AppFailure(message);
 
-  Future<void> createSupply(
-    String name,
-    SupplyUnit unit,
-    int minStock,
-    int unitCost,
-  ) async {
+  Future<void> createSupply(String name, SupplyUnit unit, int minStock) async {
     final error = InventoryValidation.name(name);
     if (error != null) _fail('Nombre: $error');
-    _checkAmounts(minStock, unitCost);
-    return repository.createSupply(name.trim(), unit, minStock, unitCost);
+    _checkMin(minStock);
+    return repository.createSupply(name.trim(), unit, minStock);
   }
 
   Future<void> editSupply(
     Supply supply, {
     required String name,
     required int minStock,
-    required int unitCost,
     required bool active,
   }) async {
     final error = InventoryValidation.name(name);
     if (error != null) _fail('Nombre: $error');
-    _checkAmounts(minStock, unitCost);
+    _checkMin(minStock);
     return repository.editSupply(
       supply.id,
       name: name.trim(),
       minStock: minStock,
-      unitCost: unitCost,
       active: active,
     );
   }
 
-  void _checkAmounts(int minStock, int unitCost) {
-    if (minStock < 0 || minStock > Qty.max)
+  void _checkMin(int minStock) {
+    if (minStock < 0 || minStock > Qty.max) {
       _fail('El stock mínimo no es válido.');
+    }
+  }
+
+  /// Costo de un insumo (centavos por unidad entera). Solo la administración.
+  Future<void> setSupplyCost(
+    Supply supply,
+    int unitCost, {
+    required String actorUid,
+  }) async {
     if (unitCost < 0 || unitCost > InventoryValidation.maxCost) {
       _fail('El costo no es válido.');
     }
+    return repository.setSupplyCost(supply.id, unitCost, actorUid: actorUid);
   }
 
   /// [quantity] siempre positiva: el tipo decide el signo. En un ajuste, el
@@ -169,7 +173,7 @@ class InventoryService {
       _fail('La compra tiene líneas ilegibles y no se puede recibir.');
     }
     if (!isAdmin && purchase.createdBy == actorUid) {
-      _fail('La compra debe recibirla otra persona de Almacén.');
+      _fail('La compra debe recibirla otra persona de la administración.');
     }
     return repository.receivePurchase(purchase.id, actorUid: actorUid);
   }

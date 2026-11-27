@@ -30,7 +30,7 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
     for (const [uid, rol] of Object.entries({ w1: 'mesero', cash: 'cajero', cash2: 'cajero', cashoff: 'cajero', k: 'cocina',
-      stock: 'almacen', admin: 'admin', super: 'superadmin', inactive: 'cajero' })) {
+      admin: 'admin', super: 'superadmin', inactive: 'cajero' })) {
       await setDoc(doc(d, 'usuarios', uid), { rol, nombre: `Usuario ${uid}`, activo: uid !== 'inactive' });
     }
     for (const uid of ['w1', 'cash', 'cash2', 'k', 'inactive']) {
@@ -93,7 +93,7 @@ test('cajero, admin y superadmin abren la caja; solo una a la vez', async () => 
 });
 
 test('mesero, cocina, almacén, anónimo, inactivo, sin jornada o sin correo verificado no abren caja', async () => {
-  for (const uid of ['w1', 'k', 'stock', 'inactive', 'cashoff']) await assertFails(openBox(db(uid), 'c1', uid));
+  for (const uid of ['w1', 'k', 'inactive', 'cashoff']) await assertFails(openBox(db(uid), 'c1', uid));
   await assertFails(openBox(anon(), 'c1', 'cash'));
   await assertFails(openBox(db('cash', false), 'c1', 'cash'));
   await assertSucceeds(openBox(db('admin'), 'c1', 'admin')); // el admin está exento de la jornada
@@ -211,7 +211,7 @@ test('sin caja abierta no se cobra', async () => {
 
 test('quién puede cobrar: cajero, admin y superadmin; el resto no', async () => {
   await openAs();
-  for (const uid of ['w1', 'k', 'stock', 'inactive', 'cashoff']) await assertFails(charge(db(uid), uid));
+  for (const uid of ['w1', 'k', 'inactive', 'cashoff']) await assertFails(charge(db(uid), uid));
   await assertFails(charge(anon(), 'cash'));
   await assertFails(charge(db('cash', false), 'cash'));
   await assertSucceeds(charge(db('admin'), 'admin', 'a', '1'));
@@ -249,7 +249,7 @@ test('lectura de pagos y cajas: personal de caja y administración; el resto no'
     await assertSucceeds(getDoc(doc(db(uid), 'cajaActiva/actual')));
     await assertSucceeds(getDocs(collection(db(uid), 'movimientosCaja')));
   }
-  for (const uid of ['w1', 'k', 'stock', 'inactive', 'cashoff']) {
+  for (const uid of ['w1', 'k', 'inactive', 'cashoff']) {
     await assertFails(getDocs(collection(db(uid), 'pagos')));
     await assertFails(getDocs(collection(db(uid), 'cajas')));
   }
@@ -270,7 +270,7 @@ test('ingresos y egresos: solo con caja abierta, válidos y de solo agregar', as
     { creadoEn: Timestamp.now() }, { extra: 1 }]) {
     await assertFails(setDoc(doc(db('cash'), 'movimientosCaja', 'mx'), movement('cash', extra)));
   }
-  for (const uid of ['w1', 'k', 'stock', 'inactive']) await assertFails(setDoc(doc(db(uid), 'movimientosCaja', 'my'), movement(uid)));
+  for (const uid of ['w1', 'k', 'inactive']) await assertFails(setDoc(doc(db(uid), 'movimientosCaja', 'my'), movement(uid)));
   await assertFails(updateDoc(doc(db('admin'), 'movimientosCaja/m1'), { monto: 1 }));
   await assertFails(deleteDoc(doc(db('admin'), 'movimientosCaja/m1')));
 });
@@ -313,7 +313,7 @@ test('cierre inválido: montos, identidad, hora y candado', async () => {
 test('solo quien abrió la caja o un administrador la cierra', async () => {
   await openAs('cash');
   await assertFails(closeBox(db('cash2'), 'c1', 'cash2'));
-  for (const uid of ['w1', 'k', 'stock', 'inactive']) await assertFails(closeBox(db(uid), 'c1', uid));
+  for (const uid of ['w1', 'k', 'inactive']) await assertFails(closeBox(db(uid), 'c1', uid));
   await assertSucceeds(closeBox(db('admin'), 'c1', 'admin'));
 });
 

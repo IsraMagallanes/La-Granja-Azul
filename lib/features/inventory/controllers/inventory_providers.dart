@@ -27,6 +27,13 @@ final purchasesProvider = StreamProvider.autoDispose<List<Purchase>>(
   (ref) => ref.watch(inventoryRepositoryProvider).watchPurchases(),
   retry: (_, _) => null,
 );
+
+/// Costos de insumos. Solo Admin y Superadmin pueden leerlos: las pantallas de
+/// Cocina NUNCA deben observar este proveedor.
+final supplyCostsProvider = StreamProvider.autoDispose<Map<String, int>>(
+  (ref) => ref.watch(inventoryRepositoryProvider).watchSupplyCosts(),
+  retry: (_, _) => null,
+);
 final recipesProvider = StreamProvider.autoDispose<List<Recipe>>(
   (ref) => ref.watch(inventoryRepositoryProvider).watchRecipes(),
   retry: (_, _) => null,

@@ -177,7 +177,7 @@ class DishReport {
     required int orders,
     required bool truncated,
     required Map<String, Recipe> recipes,
-    required Map<String, Supply> supplies,
+    required Map<String, int> costs,
   }) {
     final qty = <String, int>{};
     final revenue = <String, int>{};
@@ -197,7 +197,7 @@ class DishReport {
               revenue: revenue[id]!,
               cost: (recipes[id] == null || recipes[id]!.ingredients.isEmpty)
                   ? null
-                  : recipes[id]!.cost(supplies) * qty[id]!,
+                  : recipes[id]!.cost(costs) * qty[id]!,
             ),
         ]..sort((a, b) {
           final byQty = b.quantity.compareTo(a.quantity);
@@ -288,10 +288,10 @@ class InventoryReport {
 
   factory InventoryReport.build({
     required Iterable<Supply> supplies,
+    required Map<String, int> costs,
     required Iterable<Purchase> receivedPurchases,
     required Iterable<StockMovement> movements,
   }) {
-    final byId = {for (final s in supplies) s.id: s};
     final active = supplies.where((s) => s.active);
     var wasteCost = 0;
     var wasteCount = 0;
@@ -300,11 +300,14 @@ class InventoryReport {
       kinds[m.kind] = kinds[m.kind]! + 1;
       if (m.kind == MovementKind.merma) {
         wasteCount++;
-        wasteCost += Qty.cost(m.delta.abs(), byId[m.supplyId]?.unitCost ?? 0);
+        wasteCost += Qty.cost(m.delta.abs(), costs[m.supplyId] ?? 0);
       }
     }
     return InventoryReport(
-      valuation: active.fold(0, (a, s) => a + Qty.cost(s.stock, s.unitCost)),
+      valuation: active.fold(
+        0,
+        (a, s) => a + Qty.cost(s.stock, costs[s.id] ?? 0),
+      ),
       low: [
         for (final s in active)
           if (s.isLow) s,
